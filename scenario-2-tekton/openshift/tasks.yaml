@@ -1,0 +1,81 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: maven-build
+  namespace: rhtas-demo-ci
+spec:
+  params:
+    - name: CONTEXT
+      type: string
+      default: apps/hello-world
+  workspaces:
+    - name: source
+  steps:
+    - name: mvn-package
+      image: registry.redhat.io/ubi9/openjdk-21:1.21
+      workingDir: $(workspaces.source.path)/$(params.CONTEXT)
+      script: |
+        #!/usr/bin/env bash
+        set -euo pipefail
+        mvn -q -DskipTests=false test package
+---
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: sast-semgrep
+  namespace: rhtas-demo-ci
+spec:
+  params:
+    - name: CONTEXT
+      type: string
+      default: apps/hello-world
+  workspaces:
+    - name: source
+  steps:
+    - name: semgrep
+      image: returntocorp/semgrep:latest
+      workingDir: $(workspaces.source.path)/$(params.CONTEXT)
+      script: |
+        #!/usr/bin/env bash
+        set -euo pipefail
+        semgrep scan --config p/java --error --quiet .
+---
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: buildah-push
+  namespace: rhtas-demo-ci
+  annotations:
+    chains.tekton.dev/format: simplesigning
+spec:
+  params:
+    - name: IMAGE
+      type: string
+    - name: BUILD_VERSION
+      type: string
+    - name: CONTEXT
+      type: string
+      default: apps/hello-world
+  workspaces:
+    - name: source
+    - name: dockerconfig
+  results:
+    - name: IMAGE_DIGEST
+      description: Digest of the built image
+  steps:
+    - name: build-and-push
+      image: quay.io/buildah/stable:latest
+      workingDir: $(workspaces.source.path)/$(params.CONTEXT)
+      env:
+        - name: DOCKER_CONFIG
+          value: $(workspaces.dockerconfig.path)
+      script: |
+        #!/usr/bin/env bash
+        set -euo pipefail
+        buildah bud \
+          --build-arg BUILD_VERSION="$(params.BUILD_VERSION)" \
+          --build-arg SCENARIO=tekton \
+          -t "$(params.IMAGE)" \
+          -f Dockerfile .
+        buildah push --digestfile /tmp/digest "$(params.IMAGE)"
+        cat /tmp/digest | tee "$(results.IMAGE_DIGEST.path)"

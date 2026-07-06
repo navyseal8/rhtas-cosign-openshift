@@ -1,0 +1,52 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: spiffe-cosign-sign
+  namespace: rhtas-demo-ci
+spec:
+  params:
+    - name: IMAGE
+      type: string
+  workspaces:
+    - name: dockerconfig
+  volumes:
+    - name: spiffe-workload-api
+      csi:
+        driver: csi.spiffe.io
+        readOnly: true
+  steps:
+    - name: sign-with-spiffe
+      image: registry.redhat.io/rhtas-tech-preview/cosign-rhel9:latest
+      env:
+        - name: SPIFFE_ENDPOINT_SOCKET
+          value: unix:///spiffe-workload-api/agent.sock
+        - name: DOCKER_CONFIG
+          value: $(workspaces.dockerconfig.path)
+        - name: RHTAS_NS
+          value: trusted-artifact-signer
+      volumeMounts:
+        - name: spiffe-workload-api
+          mountPath: /spiffe-workload-api
+          readOnly: true
+      script: |
+        #!/usr/bin/env bash
+        set -euo pipefail
+
+        export TUF_URL=$(oc get tuf -n "${RHTAS_NS}" -o jsonpath='{.items[0].status.url}')
+        export COSIGN_FULCIO_URL=$(oc get fulcio -n "${RHTAS_NS}" -o jsonpath='{.items[0].status.url}')
+        export COSIGN_REKOR_URL=$(oc get rekor -n "${RHTAS_NS}" -o jsonpath='{.items[0].status.url}')
+        export COSIGN_MIRROR="${TUF_URL}"
+        export COSIGN_ROOT="${TUF_URL}/root.json"
+        export COSIGN_YES=true
+
+        # SPIRE OIDC discovery — replace with your SPIRE deployment URL
+        export SPIRE_OIDC_ISSUER="${SPIRE_OIDC_ISSUER:-https://oidc-discovery.spire.example.com}"
+        export COSIGN_OIDC_ISSUER="${SPIRE_OIDC_ISSUER}"
+        export COSIGN_CERTIFICATE_OIDC_ISSUER="${SPIRE_OIDC_ISSUER}"
+
+        cosign initialize --mirror "${COSIGN_MIRROR}" --root "${COSIGN_ROOT}"
+
+        # Automatic: cosign uses SPIFFE workload API via SPIFFE_ENDPOINT_SOCKET
+        cosign sign -y "$(params.IMAGE)"
+
+        echo "Signed $(params.IMAGE) with SPIFFE workload identity"

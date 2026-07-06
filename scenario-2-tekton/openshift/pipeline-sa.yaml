@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: tekton-chains-builder
+  namespace: rhtas-demo-ci
+  labels:
+    app.kubernetes.io/component: tekton-builder
+imagePullSecrets:
+  - name: quay-credentials

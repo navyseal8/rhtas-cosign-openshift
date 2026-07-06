@@ -1,0 +1,196 @@
+pipeline {
+    agent {
+        kubernetes {
+            yaml """
+apiVersion: v1
+kind: Pod
+metadata:
+  labels:
+    jenkins: rhtas-signer-agent
+spec:
+  serviceAccountName: rhtas-signer
+  containers:
+  - name: builder
+    image: registry.redhat.io/ubi9/openjdk-21:1.21
+    command: ['cat']
+    tty: true
+    volumeMounts:
+    - name: shared-m2
+      mountPath: /root/.m2
+  - name: cosign
+    image: registry.redhat.io/rhtas-tech-preview/cosign-rhel9:latest
+    command: ['cat']
+    tty: true
+  - name: docker
+    image: quay.io/buildah/stable:latest
+    command: ['cat']
+    tty: true
+    securityContext:
+      privileged: true
+    volumeMounts:
+    - name: varlibcontainers
+      mountPath: /var/lib/containers
+  volumes:
+  - name: shared-m2
+    emptyDir: {}
+  - name: varlibcontainers
+    emptyDir: {}
+"""
+        }
+    }
+
+    environment {
+        APP_DIR = 'apps/hello-world'
+        SCENARIO = 'jenkins'
+        SA_NAMESPACE = 'rhtas-demo-ci'
+        SA_NAME = 'rhtas-signer'
+        RHTAS_NS = 'trusted-artifact-signer'
+        TOKEN_AUDIENCE = 'sigstore'
+    }
+
+    parameters {
+        string(name: 'QUAY_ORG', defaultValue: 'acme', description: 'Quay organization')
+        string(name: 'QUAY_REPO', defaultValue: 'rhtas-hello-world', description: 'Quay repository')
+        string(name: 'GITOPS_REPO', defaultValue: 'git@github.com:acme/rhtas-cosign-openshift-demos.git')
+        string(name: 'GITOPS_BRANCH', defaultValue: 'main')
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('Build & unit test') {
+            steps {
+                container('builder') {
+                    dir(env.APP_DIR) {
+                        sh '''
+                            mvn -q -DskipTests=false test package
+                        '''
+                    }
+                }
+            }
+        }
+
+        stage('SAST') {
+            steps {
+                container('builder') {
+                    dir(env.APP_DIR) {
+                        sh '''
+                            # Semgrep OSS — fast SAST gate; replace with SonarQube/Checkmarx in production
+                            curl -sSL https://github.com/semgrep/semgrep/releases/latest/download/semgrep-linux-x86_64 -o /tmp/semgrep
+                            chmod +x /tmp/semgrep
+                            /tmp/semgrep scan --config p/java --error --quiet .
+                        '''
+                    }
+                }
+            }
+        }
+
+        stage('Container build') {
+            steps {
+                script {
+                    env.IMAGE_TAG = "jenkins-${env.BUILD_NUMBER}"
+                    env.FULL_IMAGE = "quay.io/${params.QUAY_ORG}/${params.QUAY_REPO}:${env.IMAGE_TAG}"
+                }
+                container('docker') {
+                    dir(env.APP_DIR) {
+                        sh '''
+                            buildah bud \
+                              --build-arg BUILD_VERSION=${IMAGE_TAG} \
+                              --build-arg SCENARIO=jenkins \
+                              --build-arg SIGNER_IDENTITY=unsigned \
+                              -t ${FULL_IMAGE} \
+                              -f Dockerfile .
+                        '''
+                    }
+                }
+            }
+        }
+
+        stage('Push image') {
+            steps {
+                withCredentials([usernamePassword(credentialsId: 'quay-credentials', usernameVariable: 'QUAY_USER', passwordVariable: 'QUAY_PASSWORD')]) {
+                    container('docker') {
+                        sh '''
+                            buildah login -u "$QUAY_USER" -p "$QUAY_PASSWORD" quay.io
+                            buildah push ${FULL_IMAGE}
+                        '''
+                    }
+                }
+            }
+        }
+
+        stage('Cosign sign (RHTAS keyless)') {
+            steps {
+                script {
+                    env.CLUSTER_OIDC_ISSUER = sh(
+                        script: "oc get authentication cluster -o jsonpath='{.spec.serviceAccountIssuer}'",
+                        returnStdout: true
+                    ).trim()
+                    env.TUF_URL = sh(
+                        script: "oc get tuf -n ${env.RHTAS_NS} -o jsonpath='{.items[0].status.url}'",
+                        returnStdout: true
+                    ).trim()
+                }
+                container('cosign') {
+                    withCredentials([usernamePassword(credentialsId: 'quay-credentials', usernameVariable: 'QUAY_USER', passwordVariable: 'QUAY_PASSWORD')]) {
+                        sh '''
+                            set +x
+                            export COSIGN_FULCIO_URL=$(oc get fulcio -n ${RHTAS_NS} -o jsonpath='{.items[0].status.url}')
+                            export COSIGN_REKOR_URL=$(oc get rekor -n ${RHTAS_NS} -o jsonpath='{.items[0].status.url}')
+                            export COSIGN_MIRROR=${TUF_URL}
+                            export COSIGN_ROOT=${TUF_URL}/root.json
+                            export COSIGN_OIDC_ISSUER=${CLUSTER_OIDC_ISSUER}
+                            export COSIGN_CERTIFICATE_OIDC_ISSUER=${CLUSTER_OIDC_ISSUER}
+                            export COSIGN_YES=true
+
+                            cosign initialize --mirror "$COSIGN_MIRROR" --root "$COSIGN_ROOT"
+                            cosign login quay.io -u "$QUAY_USER" -p "$QUAY_PASSWORD"
+
+                            IDENTITY_TOKEN=$(oc create token ${SA_NAME} \
+                              --namespace ${SA_NAMESPACE} \
+                              --audience ${TOKEN_AUDIENCE} \
+                              --duration 3600s)
+
+                            cosign sign -y --identity-token "$IDENTITY_TOKEN" "${FULL_IMAGE}"
+
+                            export SIGNER_IDENTITY="https://kubernetes.io/namespaces/${SA_NAMESPACE}/serviceaccounts/${SA_NAME}"
+                            cosign verify \
+                              --certificate-identity="${SIGNER_IDENTITY}" \
+                              --certificate-oidc-issuer="${COSIGN_CERTIFICATE_OIDC_ISSUER}" \
+                              "${FULL_IMAGE}"
+                        '''
+                    }
+                }
+            }
+        }
+
+        stage('GitOps — bump image tag') {
+            steps {
+                sshagent(credentials: ['gitops-repo']) {
+                    sh '''
+                        git clone --depth 1 -b ${GITOPS_BRANCH} ${GITOPS_REPO} gitops-work
+                        cd gitops-work
+                        sed -i "s|newTag:.*|newTag: ${IMAGE_TAG}|" gitops/manifests/hello-world/kustomization.yaml
+                        sed -i "s|newName:.*|newName: quay.io/${QUAY_ORG}/${QUAY_REPO}|" gitops/manifests/hello-world/kustomization.yaml
+                        git config user.email "jenkins@rhtas-demo.local"
+                        git config user.name "Jenkins RHTAS"
+                        git add gitops/manifests/hello-world/kustomization.yaml
+                        git commit -m "chore(gitops): deploy ${FULL_IMAGE} [jenkins #${BUILD_NUMBER}]"
+                        git push origin ${GITOPS_BRANCH}
+                    '''
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            echo "Signed image: ${env.FULL_IMAGE}"
+            echo "Signer: https://kubernetes.io/namespaces/${env.SA_NAMESPACE}/serviceaccounts/${env.SA_NAME}"
+        }
+    }
+}

@@ -1,0 +1,67 @@
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: rhtas-hello-world
+  namespace: rhtas-demo-ci
+  labels:
+    rhtas.demo/scenario: tekton
+spec:
+  params:
+    - name: quay-org
+      type: string
+    - name: quay-repo
+      type: string
+      default: rhtas-hello-world
+    - name: git-revision
+      type: string
+      default: main
+  workspaces:
+    - name: shared-workspace
+    - name: docker-credentials
+  tasks:
+    - name: fetch-source
+      taskRef:
+        name: git-clone
+        kind: ClusterTask
+      workspaces:
+        - name: output
+          workspace: shared-workspace
+      params:
+        - name: url
+          value: https://github.com/acme/rhtas-cosign-openshift-demos.git
+        - name: revision
+          value: $(params.git-revision)
+
+    - name: maven-build
+      runAfter: [fetch-source]
+      taskRef:
+        name: maven-build
+      workspaces:
+        - name: source
+          workspace: shared-workspace
+
+    - name: sast
+      runAfter: [maven-build]
+      taskRef:
+        name: sast-semgrep
+      workspaces:
+        - name: source
+          workspace: shared-workspace
+
+    - name: build-push
+      runAfter: [sast]
+      taskRef:
+        name: buildah-push
+      serviceAccountName: tekton-chains-builder
+      workspaces:
+        - name: source
+          workspace: shared-workspace
+        - name: dockerconfig
+          workspace: docker-credentials
+      params:
+        - name: IMAGE
+          value: quay.io/$(params.quay-org)/$(params.quay-repo):tekton-$(context.pipelineRun.uid)
+        - name: BUILD_VERSION
+          value: tekton-$(context.pipelineRun.name)
+
+  # No cosign task — Tekton Chains signs after build-push completes

@@ -1,0 +1,21 @@
+# Maven
+apps/hello-world/target/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# OS
+.DS_Store
+
+# Secrets — never commit
+**/secrets/*.yaml
+**/*-credentials.yaml
+.env
+*.pem
+cosign.key
+cosign.pub
+
+# Local overrides
+**/kustomization.local.yaml

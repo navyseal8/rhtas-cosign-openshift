@@ -1,0 +1,23 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: hello-world-dev
+  namespace: openshift-gitops
+  labels:
+    app.kubernetes.io/part-of: rhtas-cosign-demos
+spec:
+  project: default
+  source:
+  # Update to your GitHub repository
+    repoURL: https://github.com/acme/rhtas-cosign-openshift-demos.git
+    targetRevision: main
+    path: gitops/manifests/hello-world
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: rhtas-demo-dev
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

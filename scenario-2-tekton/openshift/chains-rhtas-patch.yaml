@@ -1,0 +1,49 @@
+# Patch Tekton Chains to use RHTAS Fulcio/Rekor for keyless OCI signing.
+#
+# Apply after OpenShift Pipelines is installed:
+#   oc apply -f chains-rhtas-patch.yaml
+#
+# Validate field names against your Pipelines version:
+#   oc explain tektonconfig.spec.chain
+#
+apiVersion: operator.tekton.dev/v1alpha1
+kind: TektonConfig
+metadata:
+  name: config
+  namespace: openshift-pipelines
+spec:
+  chain:
+    # OCI image signatures pushed to same registry as image
+    artifacts.oci.format: simplesigning
+    artifacts.oci.storage: oci
+    # Provenance attestations
+    artifacts.taskrun.format: in-toto
+    artifacts.taskrun.storage: oci
+  # Transparency log — RHTAS Rekor
+    transparency.enabled: "true"
+    transparency.format: intoto
+  # Keyless via Fulcio (not signing-secrets static key)
+    signers.oci.fulcio.enabled: "true"
+    signers.taskrun.fulcio.enabled: "true"
+---
+# Supplemental ConfigMap for Chains controller environment.
+# Chains reads RHTAS endpoints from these variables at runtime.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: chains-rhtas-env
+  namespace: openshift-pipelines
+  labels:
+    app.kubernetes.io/part-of: tekton-chains
+data:
+  COSIGN_YES: "true"
+  # Replace with cluster-specific values after RHTAS install:
+  # oc get fulcio,rekor,tuf -n trusted-artifact-signer
+  COSIGN_FULCIO_URL: "https://fulcio.trusted-artifact-signer.svc"
+  COSIGN_REKOR_URL: "https://rekor.trusted-artifact-signer.svc"
+  COSIGN_MIRROR: "https://tuf.trusted-artifact-signer.svc"
+  COSIGN_ROOT: "https://tuf.trusted-artifact-signer.svc/root.json"
+  # Cluster OIDC — required for keyless SA identity
+  # COSIGN_OIDC_ISSUER: set via oc patch or kustomize overlay per cluster
+  COSIGN_OIDC_ISSUER: "REPLACE_WITH_serviceAccountIssuer"
+  COSIGN_CERTIFICATE_OIDC_ISSUER: "REPLACE_WITH_serviceAccountIssuer"

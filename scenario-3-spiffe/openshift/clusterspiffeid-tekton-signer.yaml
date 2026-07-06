@@ -1,0 +1,20 @@
+# Registers Tekton signer pods for automatic SPIFFE identity issuance.
+# Requires Zero Trust Workload Identity Manager operator.
+#
+# Replace TRUST_DOMAIN with your SPIRE trust domain.
+apiVersion: spiffe.io/v1alpha1
+kind: ClusterSPIFFEID
+metadata:
+  name: rhtas-tekton-signer
+spec:
+  spiffeIDTemplate: "spiffe://TRUST_DOMAIN/ns/{{ .PodMeta.Namespace }}/sa/{{ .PodSpec.ServiceAccountName }}"
+  podSelector:
+    matchLabels:
+      rhtas.demo/signer: "true"
+  namespaceSelector:
+    matchLabels:
+      kubernetes.io/metadata.name: rhtas-demo-ci
+  # JWT audience for Fulcio / cosign
+  jwtAudience:
+    - sigstore
+    - trusted-artifact-signer
