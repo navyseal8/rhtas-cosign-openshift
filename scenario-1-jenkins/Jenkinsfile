@@ -51,7 +51,7 @@ spec:
     parameters {
         string(name: 'QUAY_ORG', defaultValue: 'acme', description: 'Quay organization')
         string(name: 'QUAY_REPO', defaultValue: 'rhtas-hello-world', description: 'Quay repository')
-        string(name: 'GITOPS_REPO', defaultValue: 'git@github.com:acme/rhtas-cosign-openshift-demos.git')
+        string(name: 'GITOPS_REPO', defaultValue: 'https://github.com/navyseal8/rhtas-cosign-openshift.git')
         string(name: 'GITOPS_BRANCH', defaultValue: 'main')
     }
 
