@@ -21,6 +21,10 @@ spec:
     image: registry.redhat.io/rhtas/cosign-rhel9:1783331812
     command: ['cat']
     tty: true
+  - name: semgrep
+    image: semgrep/semgrep:latest
+    command: ['cat']
+    tty: true
   - name: docker
     image: quay.io/buildah/stable:latest
     command: ['cat']
@@ -76,13 +80,11 @@ spec:
 
         stage('SAST') {
             steps {
-                container('builder') {
+                container('semgrep') {
                     dir(env.APP_DIR) {
                         sh '''
                             # Semgrep OSS — fast SAST gate; replace with SonarQube/Checkmarx in production
-                            curl -sSL https://github.com/semgrep/semgrep/releases/latest/download/semgrep-linux-x86_64 -o /tmp/semgrep
-                            chmod +x /tmp/semgrep
-                            /tmp/semgrep scan --config p/java --error --quiet .
+                            semgrep scan --config p/java --error --quiet .
                         '''
                     }
                 }
