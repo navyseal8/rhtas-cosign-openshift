@@ -25,6 +25,9 @@ spec:
     image: semgrep/semgrep:latest
     command: ['cat']
     tty: true
+    env:
+    - name: HOME
+      value: /tmp
   - name: docker
     image: quay.io/buildah/stable:latest
     command: ['cat']
@@ -81,12 +84,19 @@ spec:
         stage('SAST') {
             steps {
                 container('semgrep') {
-                    dir(env.APP_DIR) {
-                        sh '''
-                            # Semgrep OSS — fast SAST gate; replace with SonarQube/Checkmarx in production
-                            semgrep scan --config p/java --error --quiet .
-                        '''
-                    }
+                    sh '''
+                        set -euo pipefail
+                        # Jenkins workspace is owned by the agent UID; the semgrep
+                        # sidecar runs as a different UID on OpenShift. Copy sources
+                        # to a writable path instead of scanning the shared workspace.
+                        SCAN_DIR=/tmp/semgrep-scan
+                        rm -rf "$SCAN_DIR"
+                        mkdir -p "$SCAN_DIR"
+                        cp -a "${WORKSPACE}/${APP_DIR}/." "$SCAN_DIR/"
+                        export HOME=/tmp
+                        cd "$SCAN_DIR"
+                        semgrep scan --config p/java --error --quiet --metrics off .
+                    '''
                 }
             }
         }
