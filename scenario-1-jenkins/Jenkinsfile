@@ -18,7 +18,7 @@ spec:
     - name: shared-m2
       mountPath: /root/.m2
   - name: cosign
-    image: registry.redhat.io/rhtas-tech-preview/cosign-rhel9:latest
+    image: registry.redhat.io/rhtas/cosign-rhel9:1783331812
     command: ['cat']
     tty: true
   - name: docker
@@ -26,7 +26,7 @@ spec:
     command: ['cat']
     tty: true
     securityContext:
-      privileged: true
+      privileged: false
     volumeMounts:
     - name: varlibcontainers
       mountPath: /var/lib/containers
