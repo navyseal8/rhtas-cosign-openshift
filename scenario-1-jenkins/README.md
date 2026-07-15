@@ -80,15 +80,21 @@ curl -s https://hello-world-rhtas-demo-dev.<apps-domain>/ | jq .
 
 ## Troubleshooting
 
-### `process apparently never started in .../apps/hello-world@tmp/durable-...`
-
-Git checkout succeeded; the failure is Jenkins **durable-task** unable to write shell wrapper scripts when `dir('apps/hello-world')` is combined with a **sidecar container** on OpenShift. The Jenkinsfile avoids `dir()` inside sidecars and sets `workingDir: /home/jenkins/agent` on all pod containers to match the jnlp agent.
-
 ### Checkout stage hangs on `git checkout -f`
 
-Declarative pipelines run an **implicit checkout** before stages unless disabled. This Jenkinsfile sets `skipDefaultCheckout(true)` so only the `Checkout` stage runs `checkout scm` once. A duplicate checkout can leave `.git/index.lock` and appear to hang.
+Declarative pipelines run an **implicit checkout** before stages unless disabled. This Jenkinsfile sets `skipDefaultCheckout(true)` so only the `Checkout` stage runs `checkout scm` once.
 
 The `Selected Git installation does not exist` warning is harmless on Kubernetes agents as long as `git` is on the PATH in the jnlp container (your log shows `git version 2.30.2`).
+
+### `process apparently never started in ...@tmp/durable-...`
+
+Checkout can succeed and the **next** stage still fails. On OpenShift multi-container pods, `container('builder') { sh ... }` breaks Jenkins durable-task shell wrappers. This Jenkinsfile uses `defaultContainer 'builder'` so Maven runs as a plain `sh` step, and runs git/`oc`/ssh steps in `container('jnlp')` or `container('cosign')` only where needed.
+
+If sidecar stages (semgrep, buildah, cosign) still fail, set on the Jenkins controller:
+
+```text
+-Dorg.jenkinsci.plugins.durabletask.BourneShellScript.USE_BINARY_WRAPPER=true
+```
 
 If it persists, enable launch diagnostics on the Jenkins controller:
 

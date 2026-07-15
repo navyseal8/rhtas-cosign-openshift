@@ -1,6 +1,7 @@
 pipeline {
     agent {
         kubernetes {
+            defaultContainer 'builder'
             yaml """
 apiVersion: v1
 kind: Pod
@@ -9,8 +10,6 @@ metadata:
     jenkins: rhtas-signer-agent
 spec:
   serviceAccountName: rhtas-signer
-  securityContext:
-    fsGroup: 1000
   containers:
   - name: builder
     image: registry.redhat.io/ubi9/openjdk-21:1.21
@@ -78,7 +77,6 @@ spec:
     }
 
     options {
-        // Avoid implicit checkout + stage checkout racing on the same workspace/.git
         skipDefaultCheckout(true)
     }
 
@@ -104,7 +102,14 @@ spec:
                 timeout(time: 10, unit: 'MINUTES')
             }
             steps {
-                checkout scm
+                container('jnlp') {
+                    checkout scm
+                    sh '''
+                        # Sidecar container() steps need a world-writable @tmp on OpenShift.
+                        mkdir -p "${WORKSPACE}@tmp"
+                        chmod 1777 "${WORKSPACE}@tmp"
+                    '''
+                }
             }
         }
 
@@ -113,26 +118,24 @@ spec:
                 timeout(time: 20, unit: 'MINUTES')
             }
             steps {
-                container('builder') {
-                    sh '''
-                        set -euo pipefail
-                        mkdir -p "${HOME}/.m2/repository"
-                        cd "${WORKSPACE}/${APP_DIR}"
+                // defaultContainer=builder — do not wrap in container('builder');
+                // container() breaks durable-task sh on OpenShift multi-container pods.
+                sh '''
+                    set -euo pipefail
+                    mkdir -p "${HOME}/.m2/repository"
+                    cd "${WORKSPACE}/${APP_DIR}"
 
-                        echo "=== Maven environment ==="
-                        java -version
-                        mvn -version
-                        echo "HOME=${HOME}"
-                        echo "MAVEN_OPTS=${MAVEN_OPTS:-}"
+                    echo "=== Maven environment ==="
+                    java -version
+                    mvn -version
+                    echo "HOME=${HOME}"
+                    echo "MAVEN_OPTS=${MAVEN_OPTS:-}"
 
-                        # -B batch, -ntp no transfer progress, -e errors
-                        # openshift profile uses Red Hat GA repos (better on OCP networks)
-                        mvn -B -ntp -e \
-                          -Popenshift -Dcom.redhat.xpaas.repo.redhatga \
-                          -DskipTests=true \
-                          package
-                    '''
-                }
+                    mvn -B -ntp -e \
+                      -Popenshift -Dcom.redhat.xpaas.repo.redhatga \
+                      -DskipTests=true \
+                      package
+                '''
             }
         }
 
@@ -141,9 +144,6 @@ spec:
                 container('semgrep') {
                     sh '''
                         set -euo pipefail
-                        # Jenkins workspace is owned by the agent UID; the semgrep
-                        # sidecar runs as a different UID on OpenShift. Copy sources
-                        # to a writable path instead of scanning the shared workspace.
                         SCAN_DIR=/tmp/semgrep-scan
                         rm -rf "$SCAN_DIR"
                         mkdir -p "$SCAN_DIR"
@@ -166,8 +166,6 @@ spec:
                     sh '''
                         set -euo pipefail
                         cd "${WORKSPACE}/${APP_DIR}"
-                        # OpenShift runs buildah as an arbitrary UID with HOME=/.
-                        # Rootless buildah needs a writable config + storage paths.
                         mkdir -p "${HOME}/.config/containers"
                         cat > "${HOME}/.config/containers/storage.conf" <<EOF
 [storage]
@@ -211,17 +209,17 @@ EOF
 
         stage('Cosign sign (RHTAS keyless)') {
             steps {
-                script {
-                    env.CLUSTER_OIDC_ISSUER = sh(
-                        script: "oc get authentication cluster -o jsonpath='{.spec.serviceAccountIssuer}'",
-                        returnStdout: true
-                    ).trim()
-                    env.TUF_URL = sh(
-                        script: "oc get tuf -n ${env.RHTAS_NS} -o jsonpath='{.items[0].status.url}'",
-                        returnStdout: true
-                    ).trim()
-                }
                 container('cosign') {
+                    script {
+                        env.CLUSTER_OIDC_ISSUER = sh(
+                            script: "oc get authentication cluster -o jsonpath='{.spec.serviceAccountIssuer}'",
+                            returnStdout: true
+                        ).trim()
+                        env.TUF_URL = sh(
+                            script: "oc get tuf -n ${env.RHTAS_NS} -o jsonpath='{.items[0].status.url}'",
+                            returnStdout: true
+                        ).trim()
+                    }
                     withCredentials([usernamePassword(credentialsId: 'quay-credentials', usernameVariable: 'QUAY_USER', passwordVariable: 'QUAY_PASSWORD')]) {
                         sh '''
                             set +x
@@ -256,18 +254,20 @@ EOF
 
         stage('GitOps — bump image tag') {
             steps {
-                sshagent(credentials: ['gitops-repo']) {
-                    sh '''
-                        git clone --depth 1 -b ${GITOPS_BRANCH} ${GITOPS_REPO} gitops-work
-                        cd gitops-work
-                        sed -i "s|newTag:.*|newTag: ${IMAGE_TAG}|" gitops/manifests/hello-world/kustomization.yaml
-                        sed -i "s|newName:.*|newName: quay.io/${QUAY_ORG}/${QUAY_REPO}|" gitops/manifests/hello-world/kustomization.yaml
-                        git config user.email "jenkins@rhtas-demo.local"
-                        git config user.name "Jenkins RHTAS"
-                        git add gitops/manifests/hello-world/kustomization.yaml
-                        git commit -m "chore(gitops): deploy ${FULL_IMAGE} [jenkins #${BUILD_NUMBER}]"
-                        git push origin ${GITOPS_BRANCH}
-                    '''
+                container('jnlp') {
+                    sshagent(credentials: ['gitops-repo']) {
+                        sh '''
+                            git clone --depth 1 -b ${GITOPS_BRANCH} ${GITOPS_REPO} gitops-work
+                            cd gitops-work
+                            sed -i "s|newTag:.*|newTag: ${IMAGE_TAG}|" gitops/manifests/hello-world/kustomization.yaml
+                            sed -i "s|newName:.*|newName: quay.io/${QUAY_ORG}/${QUAY_REPO}|" gitops/manifests/hello-world/kustomization.yaml
+                            git config user.email "jenkins@rhtas-demo.local"
+                            git config user.name "Jenkins RHTAS"
+                            git add gitops/manifests/hello-world/kustomization.yaml
+                            git commit -m "chore(gitops): deploy ${FULL_IMAGE} [jenkins #${BUILD_NUMBER}]"
+                            git push origin ${GITOPS_BRANCH}
+                        '''
+                    }
                 }
             }
         }
