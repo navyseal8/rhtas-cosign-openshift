@@ -90,6 +90,17 @@ If it persists, enable launch diagnostics on the Jenkins controller:
 -Dorg.jenkinsci.plugins.durabletask.BourneShellScript.LAUNCH_DIAGNOSTICS=true
 ```
 
+### Maven `sh` step hangs for several minutes
+
+Usually Maven is downloading dependencies with no visible output (`-q`), or cannot write to `~/.m2` when the builder sidecar runs as an OpenShift arbitrary UID. The Jenkinsfile sets a writable `HOME` and `maven.repo.local` under `/var/tmp/maven-home`, uses `-B -ntp -e` for logging, and the Red Hat `openshift` Maven profile.
+
+If it still stalls, from a debug pod in `rhtas-demo-ci` check egress:
+
+```bash
+curl -sI https://repo.maven.apache.org/maven2/ | head -3
+curl -sI https://maven.repository.redhat.com/ga/ | head -3
+```
+
 ## Key documentation
 
 - **[Cosign ServiceAccount & token flow](docs/cosign-service-account.md)** — step-by-step explanation of robot account, TokenRequest, and passing the token to cosign

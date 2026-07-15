@@ -17,9 +17,17 @@ spec:
     command: ['cat']
     tty: true
     workingDir: /home/jenkins/agent
+    env:
+    - name: HOME
+      value: /var/tmp/maven-home
+    - name: MAVEN_OPTS
+      value: >-
+        -Dmaven.repo.local=/var/tmp/maven-home/.m2/repository
+        -Dmaven.wagon.http.connectTimeout=60000
+        -Dmaven.wagon.http.readTimeout=60000
     volumeMounts:
-    - name: shared-m2
-      mountPath: /home/jboss/.m2
+    - name: maven-home
+      mountPath: /var/tmp/maven-home
   - name: cosign
     image: registry.redhat.io/rhtas/cosign-rhel9:1783331812
     command: ['cat']
@@ -57,7 +65,7 @@ spec:
     - name: buildah-runroot
       mountPath: /var/tmp/buildah-runroot
   volumes:
-  - name: shared-m2
+  - name: maven-home
     emptyDir: {}
   - name: buildah-home
     emptyDir: {}
@@ -98,12 +106,28 @@ spec:
         }
 
         stage('Build & unit test') {
+            options {
+                timeout(time: 20, unit: 'MINUTES')
+            }
             steps {
                 container('builder') {
                     sh '''
                         set -euo pipefail
+                        mkdir -p "${HOME}/.m2/repository"
                         cd "${WORKSPACE}/${APP_DIR}"
-                        mvn -q -DskipTests=false test package
+
+                        echo "=== Maven environment ==="
+                        java -version
+                        mvn -version
+                        echo "HOME=${HOME}"
+                        echo "MAVEN_OPTS=${MAVEN_OPTS:-}"
+
+                        # -B batch, -ntp no transfer progress, -e errors
+                        # openshift profile uses Red Hat GA repos (better on OCP networks)
+                        mvn -B -ntp -e \
+                          -Popenshift -Dcom.redhat.xpaas.repo.redhatga \
+                          -DskipTests=true \
+                          package
                     '''
                 }
             }
