@@ -11,6 +11,11 @@ metadata:
 spec:
   serviceAccountName: rhtas-signer
   containers:
+  - name: jnlp
+    env:
+    - name: HOME
+      value: /home/jenkins/agent
+    workingDir: /home/jenkins/agent
   - name: builder
     image: registry.redhat.io/ubi9/openjdk-21:1.21
     command: ['cat']
@@ -18,7 +23,7 @@ spec:
     workingDir: /home/jenkins/agent
     env:
     - name: HOME
-      value: /var/tmp/maven-home
+      value: /home/jenkins/agent
     - name: MAVEN_OPTS
       value: >-
         -Dmaven.repo.local=/var/tmp/maven-home/.m2/repository
@@ -32,6 +37,9 @@ spec:
     command: ['cat']
     tty: true
     workingDir: /home/jenkins/agent
+    env:
+    - name: HOME
+      value: /home/jenkins/agent
   - name: semgrep
     image: semgrep/semgrep:latest
     command: ['cat']
@@ -39,7 +47,7 @@ spec:
     workingDir: /home/jenkins/agent
     env:
     - name: HOME
-      value: /tmp
+      value: /home/jenkins/agent
   - name: docker
     image: quay.io/buildah/stable:latest
     command: ['cat']
@@ -47,6 +55,8 @@ spec:
     workingDir: /home/jenkins/agent
     env:
     - name: HOME
+      value: /home/jenkins/agent
+    - name: BUILDAH_HOME
       value: /var/tmp/buildah-home
     - name: STORAGE_DRIVER
       value: vfs
@@ -104,11 +114,6 @@ spec:
             steps {
                 container('jnlp') {
                     checkout scm
-                    sh '''
-                        # Sidecar container() steps need a world-writable @tmp on OpenShift.
-                        mkdir -p "${WORKSPACE}@tmp"
-                        chmod 1777 "${WORKSPACE}@tmp"
-                    '''
                 }
             }
         }
@@ -118,18 +123,16 @@ spec:
                 timeout(time: 20, unit: 'MINUTES')
             }
             steps {
-                // defaultContainer=builder — do not wrap in container('builder');
-                // container() breaks durable-task sh on OpenShift multi-container pods.
                 sh '''
                     set -euo pipefail
-                    mkdir -p "${HOME}/.m2/repository"
+                    mkdir -p /var/tmp/maven-home/.m2/repository
                     cd "${WORKSPACE}/${APP_DIR}"
 
                     echo "=== Maven environment ==="
+                    echo "HOME=${HOME}"
+                    echo "WORKSPACE=${WORKSPACE}"
                     java -version
                     mvn -version
-                    echo "HOME=${HOME}"
-                    echo "MAVEN_OPTS=${MAVEN_OPTS:-}"
 
                     mvn -B -ntp -e \
                       -Popenshift -Dcom.redhat.xpaas.repo.redhatga \
@@ -148,7 +151,6 @@ spec:
                         rm -rf "$SCAN_DIR"
                         mkdir -p "$SCAN_DIR"
                         cp -a "${WORKSPACE}/${APP_DIR}/." "$SCAN_DIR/"
-                        export HOME=/tmp
                         cd "$SCAN_DIR"
                         semgrep scan --config p/java --error --quiet --metrics off .
                     '''
@@ -166,12 +168,12 @@ spec:
                     sh '''
                         set -euo pipefail
                         cd "${WORKSPACE}/${APP_DIR}"
-                        mkdir -p "${HOME}/.config/containers"
-                        cat > "${HOME}/.config/containers/storage.conf" <<EOF
+                        mkdir -p /var/tmp/buildah-home/.config/containers
+                        cat > /var/tmp/buildah-home/.config/containers/storage.conf <<EOF
 [storage]
 driver = "vfs"
 runroot = "/var/tmp/buildah-runroot"
-graphroot = "${HOME}/.local/share/containers/storage"
+graphroot = "/var/tmp/buildah-home/.local/share/containers/storage"
 EOF
 
                         buildah bud \
@@ -191,12 +193,12 @@ EOF
                     container('docker') {
                         sh '''
                             set -euo pipefail
-                            mkdir -p "${HOME}/.config/containers"
-                            cat > "${HOME}/.config/containers/storage.conf" <<EOF
+                            mkdir -p /var/tmp/buildah-home/.config/containers
+                            cat > /var/tmp/buildah-home/.config/containers/storage.conf <<EOF
 [storage]
 driver = "vfs"
 runroot = "/var/tmp/buildah-runroot"
-graphroot = "${HOME}/.local/share/containers/storage"
+graphroot = "/var/tmp/buildah-home/.local/share/containers/storage"
 EOF
 
                             buildah login -u "$QUAY_USER" -p "$QUAY_PASSWORD" quay.io

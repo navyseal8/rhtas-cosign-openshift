@@ -24,6 +24,7 @@ checkout → mvn test/package → SAST (semgrep) → docker build → push (unsi
 oc apply -f openshift/namespace.yaml
 oc apply -f openshift/serviceaccount-signer.yaml
 oc apply -f openshift/rolebinding-tokenrequest.yaml
+oc apply -f openshift/scc-anyuid-rhtas-signer.yaml
 ```
 
 ### 2. Configure RHTAS for kubernetes OIDC issuer
@@ -88,12 +89,22 @@ The `Selected Git installation does not exist` warning is harmless on Kubernetes
 
 ### `process apparently never started in ...@tmp/durable-...`
 
-Checkout can succeed and the **next** stage still fails. On OpenShift multi-container pods, `container('builder') { sh ... }` breaks Jenkins durable-task shell wrappers. This Jenkinsfile uses `defaultContainer 'builder'` so Maven runs as a plain `sh` step, and runs git/`oc`/ssh steps in `container('jnlp')` or `container('cosign')` only where needed.
+Checkout can succeed and the **next** `sh` step still fails. Common causes on OpenShift Jenkins agents:
 
-If sidecar stages (semgrep, buildah, cosign) still fail, set on the Jenkins controller:
+1. **`HOME` must match the workspace parent** — Kubernetes agents use `workingDir: /home/jenkins/agent`. Do not set `HOME` to `/var/tmp/...` on the default/builder container; Jenkins durable-task writes shell wrappers under `${WORKSPACE}@tmp` relative to `HOME`. Maven cache and buildah config use separate paths (`MAVEN_OPTS`, `/var/tmp/buildah-home`).
+
+2. **Multi-container pods** — use `defaultContainer 'builder'` for Maven `sh` steps; run git in `container('jnlp')`.
+
+3. **Controller flag** (if sidecar `sh` steps still fail):
 
 ```text
 -Dorg.jenkinsci.plugins.durabletask.BourneShellScript.USE_BINARY_WRAPPER=true
+```
+
+4. **Buildah** needs `anyuid` SCC on the agent service account:
+
+```bash
+oc apply -f openshift/scc-anyuid-rhtas-signer.yaml
 ```
 
 If it persists, enable launch diagnostics on the Jenkins controller:
@@ -124,4 +135,5 @@ curl -sI https://maven.repository.redhat.com/ga/ | head -3
 | `Jenkinsfile` | Full CI/CD pipeline |
 | `openshift/serviceaccount-signer.yaml` | Robot SA `rhtas-signer` |
 | `openshift/rolebinding-tokenrequest.yaml` | RBAC for TokenRequest API |
+| `openshift/scc-anyuid-rhtas-signer.yaml` | anyuid SCC for buildah in agent pod |
 | `scripts/request-signing-token.sh` | Token helper used in pipeline |
