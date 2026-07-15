@@ -32,15 +32,32 @@ spec:
     image: quay.io/buildah/stable:latest
     command: ['cat']
     tty: true
+    env:
+    - name: HOME
+      value: /var/tmp/buildah-home
+    - name: STORAGE_DRIVER
+      value: vfs
+    - name: BUILDAH_ISOLATION
+      value: chroot
+    - name: BUILDAH_FORMAT
+      value: docker
     securityContext:
       privileged: false
     volumeMounts:
-    - name: varlibcontainers
-      mountPath: /var/lib/containers
+    - name: buildah-home
+      mountPath: /var/tmp/buildah-home
+    - name: buildah-storage
+      mountPath: /var/tmp/buildah-home/.local/share/containers/storage
+    - name: buildah-runroot
+      mountPath: /var/tmp/buildah-runroot
   volumes:
   - name: shared-m2
     emptyDir: {}
-  - name: varlibcontainers
+  - name: buildah-home
+    emptyDir: {}
+  - name: buildah-storage
+    emptyDir: {}
+  - name: buildah-runroot
     emptyDir: {}
 """
         }
@@ -110,6 +127,17 @@ spec:
                 container('docker') {
                     dir(env.APP_DIR) {
                         sh '''
+                            set -euo pipefail
+                            # OpenShift runs buildah as an arbitrary UID with HOME=/.
+                            # Rootless buildah needs a writable config + storage paths.
+                            mkdir -p "${HOME}/.config/containers"
+                            cat > "${HOME}/.config/containers/storage.conf" <<EOF
+[storage]
+driver = "vfs"
+runroot = "/var/tmp/buildah-runroot"
+graphroot = "${HOME}/.local/share/containers/storage"
+EOF
+
                             buildah bud \
                               --build-arg BUILD_VERSION=${IMAGE_TAG} \
                               --build-arg SCENARIO=jenkins \
@@ -127,6 +155,15 @@ spec:
                 withCredentials([usernamePassword(credentialsId: 'quay-credentials', usernameVariable: 'QUAY_USER', passwordVariable: 'QUAY_PASSWORD')]) {
                     container('docker') {
                         sh '''
+                            set -euo pipefail
+                            mkdir -p "${HOME}/.config/containers"
+                            cat > "${HOME}/.config/containers/storage.conf" <<EOF
+[storage]
+driver = "vfs"
+runroot = "/var/tmp/buildah-runroot"
+graphroot = "${HOME}/.local/share/containers/storage"
+EOF
+
                             buildah login -u "$QUAY_USER" -p "$QUAY_PASSWORD" quay.io
                             buildah push ${FULL_IMAGE}
                         '''
