@@ -9,22 +9,27 @@ metadata:
     jenkins: rhtas-signer-agent
 spec:
   serviceAccountName: rhtas-signer
+  securityContext:
+    fsGroup: 1000
   containers:
   - name: builder
     image: registry.redhat.io/ubi9/openjdk-21:1.21
     command: ['cat']
     tty: true
+    workingDir: /home/jenkins/agent
     volumeMounts:
     - name: shared-m2
-      mountPath: /root/.m2
+      mountPath: /home/jboss/.m2
   - name: cosign
     image: registry.redhat.io/rhtas/cosign-rhel9:1783331812
     command: ['cat']
     tty: true
+    workingDir: /home/jenkins/agent
   - name: semgrep
     image: semgrep/semgrep:latest
     command: ['cat']
     tty: true
+    workingDir: /home/jenkins/agent
     env:
     - name: HOME
       value: /tmp
@@ -32,6 +37,7 @@ spec:
     image: quay.io/buildah/stable:latest
     command: ['cat']
     tty: true
+    workingDir: /home/jenkins/agent
     env:
     - name: HOME
       value: /var/tmp/buildah-home
@@ -83,17 +89,22 @@ spec:
         stage('Checkout') {
             steps {
                 checkout scm
+                sh '''
+                    # jnlp agent owns the workspace; ensure @tmp exists for durable-task sh steps
+                    mkdir -p "${WORKSPACE}@tmp"
+                    chmod -R a+rwX "${WORKSPACE}@tmp" || true
+                '''
             }
         }
 
         stage('Build & unit test') {
             steps {
                 container('builder') {
-                    dir(env.APP_DIR) {
-                        sh '''
-                            mvn -q -DskipTests=false test package
-                        '''
-                    }
+                    sh '''
+                        set -euo pipefail
+                        cd "${WORKSPACE}/${APP_DIR}"
+                        mvn -q -DskipTests=false test package
+                    '''
                 }
             }
         }
@@ -125,27 +136,26 @@ spec:
                     env.FULL_IMAGE = "quay.io/${params.QUAY_ORG}/${params.QUAY_REPO}:${env.IMAGE_TAG}"
                 }
                 container('docker') {
-                    dir(env.APP_DIR) {
-                        sh '''
-                            set -euo pipefail
-                            # OpenShift runs buildah as an arbitrary UID with HOME=/.
-                            # Rootless buildah needs a writable config + storage paths.
-                            mkdir -p "${HOME}/.config/containers"
-                            cat > "${HOME}/.config/containers/storage.conf" <<EOF
+                    sh '''
+                        set -euo pipefail
+                        cd "${WORKSPACE}/${APP_DIR}"
+                        # OpenShift runs buildah as an arbitrary UID with HOME=/.
+                        # Rootless buildah needs a writable config + storage paths.
+                        mkdir -p "${HOME}/.config/containers"
+                        cat > "${HOME}/.config/containers/storage.conf" <<EOF
 [storage]
 driver = "vfs"
 runroot = "/var/tmp/buildah-runroot"
 graphroot = "${HOME}/.local/share/containers/storage"
 EOF
 
-                            buildah bud \
-                              --build-arg BUILD_VERSION=${IMAGE_TAG} \
-                              --build-arg SCENARIO=jenkins \
-                              --build-arg SIGNER_IDENTITY=unsigned \
-                              -t ${FULL_IMAGE} \
-                              -f Dockerfile .
-                        '''
-                    }
+                        buildah bud \
+                          --build-arg BUILD_VERSION=${IMAGE_TAG} \
+                          --build-arg SCENARIO=jenkins \
+                          --build-arg SIGNER_IDENTITY=unsigned \
+                          -t ${FULL_IMAGE} \
+                          -f Dockerfile .
+                    '''
                 }
             }
         }

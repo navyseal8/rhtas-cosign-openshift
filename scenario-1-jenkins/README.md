@@ -78,6 +78,18 @@ cosign verify \
 curl -s https://hello-world-rhtas-demo-dev.<apps-domain>/ | jq .
 ```
 
+## Troubleshooting
+
+### `process apparently never started in .../apps/hello-world@tmp/durable-...`
+
+Git checkout succeeded; the failure is Jenkins **durable-task** unable to write shell wrapper scripts when `dir('apps/hello-world')` is combined with a **sidecar container** on OpenShift. The Jenkinsfile avoids `dir()` inside sidecars and sets `workingDir: /home/jenkins/agent` on all pod containers to match the jnlp agent.
+
+If it persists, enable launch diagnostics on the Jenkins controller:
+
+```text
+-Dorg.jenkinsci.plugins.durabletask.BourneShellScript.LAUNCH_DIAGNOSTICS=true
+```
+
 ## Key documentation
 
 - **[Cosign ServiceAccount & token flow](docs/cosign-service-account.md)** — step-by-step explanation of robot account, TokenRequest, and passing the token to cosign
