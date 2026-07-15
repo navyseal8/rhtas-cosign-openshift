@@ -84,6 +84,12 @@ curl -s https://hello-world-rhtas-demo-dev.<apps-domain>/ | jq .
 
 Git checkout succeeded; the failure is Jenkins **durable-task** unable to write shell wrapper scripts when `dir('apps/hello-world')` is combined with a **sidecar container** on OpenShift. The Jenkinsfile avoids `dir()` inside sidecars and sets `workingDir: /home/jenkins/agent` on all pod containers to match the jnlp agent.
 
+### Checkout stage hangs on `git checkout -f`
+
+Declarative pipelines run an **implicit checkout** before stages unless disabled. This Jenkinsfile sets `skipDefaultCheckout(true)` so only the `Checkout` stage runs `checkout scm` once. A duplicate checkout can leave `.git/index.lock` and appear to hang.
+
+The `Selected Git installation does not exist` warning is harmless on Kubernetes agents as long as `git` is on the PATH in the jnlp container (your log shows `git version 2.30.2`).
+
 If it persists, enable launch diagnostics on the Jenkins controller:
 
 ```text

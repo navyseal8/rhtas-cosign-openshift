@@ -77,6 +77,11 @@ spec:
         }
     }
 
+    options {
+        // Avoid implicit checkout + stage checkout racing on the same workspace/.git
+        skipDefaultCheckout(true)
+    }
+
     environment {
         APP_DIR = 'apps/hello-world'
         SCENARIO = 'jenkins'
@@ -95,13 +100,11 @@ spec:
 
     stages {
         stage('Checkout') {
+            options {
+                timeout(time: 10, unit: 'MINUTES')
+            }
             steps {
                 checkout scm
-                sh '''
-                    # jnlp agent owns the workspace; ensure @tmp exists for durable-task sh steps
-                    mkdir -p "${WORKSPACE}@tmp"
-                    chmod -R a+rwX "${WORKSPACE}@tmp" || true
-                '''
             }
         }
 
