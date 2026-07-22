@@ -1,14 +1,17 @@
-# Bind tekton-chains-builder to pipelines-scc so buildah can use SETFCAP + uid 1000.
-# pipelines-scc is created by the OpenShift Pipelines operator.
+# Grant anyuid so buildah can run as root in the Task pod.
+# Required on clusters where pipelines-scc blocks allowPrivilegeEscalation.
+#
+# Equivalent CLI:
+#   oc adm policy add-scc-to-user anyuid -z tekton-chains-builder -n rhtas-demo-ci
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: tekton-chains-builder-pipelines-scc
+  name: tekton-chains-builder-anyuid
   namespace: rhtas-demo-ci
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: system:openshift:scc:pipelines-scc
+  name: system:openshift:scc:anyuid
 subjects:
   - kind: ServiceAccount
     name: tekton-chains-builder

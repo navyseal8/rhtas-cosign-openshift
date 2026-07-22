@@ -111,15 +111,13 @@ spec:
     - name: build-and-push
       image: quay.io/buildah/stable:latest
       workingDir: $(workspaces.source.path)/$(params.CONTEXT)
-      # OpenShift: buildah image user "build" (uid 1000) + SETFCAP via pipelines-scc
+      # OpenShift: run as root under anyuid SCC (pipelines-scc may block SETFCAP /
+      # allowPrivilegeEscalation on newer clusters).
       securityContext:
-        runAsUser: 1000
-        allowPrivilegeEscalation: true
-        capabilities:
-          add: ["SETFCAP"]
+        runAsUser: 0
       env:
         - name: HOME
-          value: /home/build
+          value: /root
         - name: STORAGE_DRIVER
           value: vfs
         - name: BUILDAH_ISOLATION
@@ -131,13 +129,13 @@ spec:
         set -euo pipefail
 
         # Tekton mounts docker-registry secrets as .dockerconfigjson; buildah wants config.json
-        mkdir -p /home/build/.docker
+        mkdir -p /root/.docker
         if [[ -f "$(workspaces.dockerconfig.path)/.dockerconfigjson" ]]; then
-          cp "$(workspaces.dockerconfig.path)/.dockerconfigjson" /home/build/.docker/config.json
+          cp "$(workspaces.dockerconfig.path)/.dockerconfigjson" /root/.docker/config.json
         elif [[ -f "$(workspaces.dockerconfig.path)/config.json" ]]; then
-          cp "$(workspaces.dockerconfig.path)/config.json" /home/build/.docker/config.json
+          cp "$(workspaces.dockerconfig.path)/config.json" /root/.docker/config.json
         fi
-        export DOCKER_CONFIG=/home/build/.docker
+        export DOCKER_CONFIG=/root/.docker
 
         buildah bud \
           --storage-driver vfs \
