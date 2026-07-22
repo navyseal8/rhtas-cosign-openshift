@@ -33,6 +33,17 @@ oc apply -f openshift/tasks.yaml
 oc apply -f openshift/pipeline.yaml
 ```
 
+Grant the builder SA `pipelines-scc` (cluster-admin) so buildah can use uid `1000` + `SETFCAP`:
+
+```bash
+oc adm policy add-scc-to-user pipelines-scc \
+  -z tekton-chains-builder -n rhtas-demo-ci
+
+# Ensure pipelines-scc allows Buildah (required on some OCP versions)
+oc patch scc pipelines-scc --type merge -p \
+  '{"allowedCapabilities":["SETFCAP"],"allowPrivilegeEscalation":true}'
+```
+
 ### 2. Configure Chains for RHTAS keyless signing
 
 ```bash
@@ -116,6 +127,6 @@ cosign verify \
 | `openshift/pipeline.yaml` | Pipeline — build, SAST, push only |
 | `openshift/tasks.yaml` | Reusable Tasks (git-clone, maven, semgrep, buildah) |
 | `openshift/pipeline-sa.yaml` | Builder SA used by Chains signing identity |
-| `openshift/scc-pipelines-builder.yaml` | Bind builder SA to `privileged` SCC (buildah uid_map) |
+| `openshift/scc-pipelines-builder.yaml` | Bind builder SA to `pipelines-scc` (buildah) |
 | `openshift/chains-rhtas-patch.yaml` | Chains ↔ RHTAS configuration |
 | `docs/tekton-chains-rhtas.md` | Deep dive on Chains + RHTAS |

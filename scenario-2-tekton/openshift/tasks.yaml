@@ -107,43 +107,60 @@ spec:
   results:
     - name: IMAGE_DIGEST
       description: Digest of the built image
+  stepTemplate:
+    env:
+      - name: HOME
+        value: /home/build
+      - name: STORAGE_DRIVER
+        value: vfs
+      - name: BUILDAH_ISOLATION
+        value: chroot
+      - name: BUILDAH_FORMAT
+        value: docker
+  volumes:
+    - name: varlibcontainers
+      emptyDir: {}
+    - name: buildah-home
+      emptyDir: {}
   steps:
     - name: build-and-push
-      # Use RH buildah image; privileged is required on clusters that block CLONE_NEWUSER/uid_map
       image: registry.redhat.io/rhel9/buildah:latest
       workingDir: $(workspaces.source.path)/$(params.CONTEXT)
+      # Tip 4 (RH): uid 1000 + SETFCAP + allowPrivilegeEscalation under pipelines-scc
       securityContext:
-        privileged: true
-      env:
-        - name: HOME
-          value: /root
-        - name: STORAGE_DRIVER
-          value: vfs
-        - name: BUILDAH_ISOLATION
-          value: chroot
-        - name: BUILDAH_FORMAT
-          value: docker
-        - name: _BUILDAH_STARTED_IN_USERNS
-          value: ""
+        runAsUser: 1000
+        allowPrivilegeEscalation: true
+        capabilities:
+          add: ["SETFCAP"]
+      volumeMounts:
+        # Tip 3: writable layer storage (do not use the container's rootfs)
+        - name: varlibcontainers
+          mountPath: /var/lib/containers
+        - name: buildah-home
+          mountPath: /home/build
       script: |
         #!/usr/bin/env bash
         set -euo pipefail
 
-        mkdir -p /root/.docker /var/lib/containers
-        if [[ -f "$(workspaces.dockerconfig.path)/.dockerconfigjson" ]]; then
-          cp "$(workspaces.dockerconfig.path)/.dockerconfigjson" /root/.docker/config.json
-        elif [[ -f "$(workspaces.dockerconfig.path)/config.json" ]]; then
-          cp "$(workspaces.dockerconfig.path)/config.json" /root/.docker/config.json
-        fi
-        export DOCKER_CONFIG=/root/.docker
+        mkdir -p /home/build/.docker \
+                 /home/build/.local/share/containers/storage \
+                 /var/lib/containers
 
-        buildah --storage-driver vfs bud \
+        if [[ -f "$(workspaces.dockerconfig.path)/.dockerconfigjson" ]]; then
+          cp "$(workspaces.dockerconfig.path)/.dockerconfigjson" /home/build/.docker/config.json
+        elif [[ -f "$(workspaces.dockerconfig.path)/config.json" ]]; then
+          cp "$(workspaces.dockerconfig.path)/config.json" /home/build/.docker/config.json
+        fi
+        export DOCKER_CONFIG=/home/build/.docker
+
+        # Tips 1–2: vfs + chroot (also set via env above)
+        buildah bud \
+          --storage-driver vfs \
           --isolation chroot \
-          --userns host \
           --build-arg BUILD_VERSION="$(params.BUILD_VERSION)" \
           --build-arg SCENARIO=tekton \
           -t "$(params.IMAGE)" \
           -f Dockerfile .
 
-        buildah --storage-driver vfs push --digestfile /tmp/digest "$(params.IMAGE)"
+        buildah push --storage-driver vfs --digestfile /tmp/digest "$(params.IMAGE)"
         cat /tmp/digest | tee "$(results.IMAGE_DIGEST.path)"

@@ -1,17 +1,20 @@
-# Grant privileged SCC so buildah can create user namespaces / write uid_map.
-# anyuid alone is not enough on clusters that block CLONE_NEWUSER via seccomp.
+# Bind tekton-chains-builder to pipelines-scc (OpenShift Pipelines operator SCC).
+# Required for buildah with runAsUser 1000 + SETFCAP.
 #
-# Equivalent CLI:
-#   oc adm policy add-scc-to-user privileged -z tekton-chains-builder -n rhtas-demo-ci
+# Cluster-admin setup (once per cluster / as needed):
+#   oc adm policy add-scc-to-user pipelines-scc \
+#     -z tekton-chains-builder -n rhtas-demo-ci
+#   oc patch scc pipelines-scc --type merge -p \
+#     '{"allowedCapabilities":["SETFCAP"],"allowPrivilegeEscalation":true}'
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: tekton-chains-builder-privileged
+  name: tekton-chains-builder-pipelines-scc
   namespace: rhtas-demo-ci
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: system:openshift:scc:privileged
+  name: system:openshift:scc:pipelines-scc
 subjects:
   - kind: ServiceAccount
     name: tekton-chains-builder
