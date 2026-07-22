@@ -116,6 +116,6 @@ cosign verify \
 | `openshift/pipeline.yaml` | Pipeline — build, SAST, push only |
 | `openshift/tasks.yaml` | Reusable Tasks (git-clone, maven, semgrep, buildah) |
 | `openshift/pipeline-sa.yaml` | Builder SA used by Chains signing identity |
-| `openshift/scc-pipelines-builder.yaml` | Bind builder SA to `anyuid` SCC (buildah as root) |
+| `openshift/scc-pipelines-builder.yaml` | Bind builder SA to `privileged` SCC (buildah uid_map) |
 | `openshift/chains-rhtas-patch.yaml` | Chains ↔ RHTAS configuration |
 | `docs/tekton-chains-rhtas.md` | Deep dive on Chains + RHTAS |

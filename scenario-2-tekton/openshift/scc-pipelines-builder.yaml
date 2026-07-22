@@ -1,17 +1,17 @@
-# Grant anyuid so buildah can run as root in the Task pod.
-# Required on clusters where pipelines-scc blocks allowPrivilegeEscalation.
+# Grant privileged SCC so buildah can create user namespaces / write uid_map.
+# anyuid alone is not enough on clusters that block CLONE_NEWUSER via seccomp.
 #
 # Equivalent CLI:
-#   oc adm policy add-scc-to-user anyuid -z tekton-chains-builder -n rhtas-demo-ci
+#   oc adm policy add-scc-to-user privileged -z tekton-chains-builder -n rhtas-demo-ci
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: tekton-chains-builder-anyuid
+  name: tekton-chains-builder-privileged
   namespace: rhtas-demo-ci
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: system:openshift:scc:anyuid
+  name: system:openshift:scc:privileged
 subjects:
   - kind: ServiceAccount
     name: tekton-chains-builder
