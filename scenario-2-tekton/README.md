@@ -28,6 +28,7 @@ PipelineRun → maven build → SAST → buildah push (no cosign in YAML)
 ```bash
 oc apply -f openshift/namespace.yaml
 oc apply -f openshift/pipeline-sa.yaml
+oc apply -f openshift/scc-pipelines-builder.yaml
 oc apply -f openshift/tasks.yaml
 oc apply -f openshift/pipeline.yaml
 ```
@@ -113,6 +114,8 @@ cosign verify \
 | File | Description |
 |------|-------------|
 | `openshift/pipeline.yaml` | Pipeline — build, SAST, push only |
-| `openshift/tasks.yaml` | Reusable Tasks |
+| `openshift/tasks.yaml` | Reusable Tasks (git-clone, maven, semgrep, buildah) |
+| `openshift/pipeline-sa.yaml` | Builder SA used by Chains signing identity |
+| `openshift/scc-pipelines-builder.yaml` | Bind builder SA to `pipelines-scc` (buildah SETFCAP) |
 | `openshift/chains-rhtas-patch.yaml` | Chains ↔ RHTAS configuration |
 | `docs/tekton-chains-rhtas.md` | Deep dive on Chains + RHTAS |
