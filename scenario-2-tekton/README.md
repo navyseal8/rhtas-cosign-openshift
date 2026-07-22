@@ -54,7 +54,27 @@ tkn pipeline start rhtas-hello-world \
   -n rhtas-demo-ci \
   --param quay-org=acme \
   --param quay-repo=rhtas-hello-world \
+  --param git-url=https://github.com/navyseal8/rhtas-cosign-openshift.git \
   --workspace name=shared-workspace,volumeClaimTemplateFile=openshift/workspace-pvc.yaml \
+  --workspace name=docker-credentials,secret=quay-credentials \
+  --showlog
+```
+
+For a **private** GitHub repo, create a secret with a PAT and bind it:
+
+```bash
+oc create secret generic github-credentials \
+  --from-literal=username=<github-user> \
+  --from-literal=password=<github-pat> \
+  -n rhtas-demo-ci
+
+tkn pipeline start rhtas-hello-world \
+  -n rhtas-demo-ci \
+  --param quay-org=acme \
+  --param git-url=https://github.com/navyseal8/rhtas-cosign-openshift.git \
+  --workspace name=shared-workspace,volumeClaimTemplateFile=openshift/workspace-pvc.yaml \
+  --workspace name=docker-credentials,secret=quay-credentials \
+  --workspace name=git-credentials,secret=github-credentials \
   --showlog
 ```
 

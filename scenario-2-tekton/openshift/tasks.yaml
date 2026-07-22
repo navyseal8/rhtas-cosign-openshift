@@ -13,17 +13,35 @@ spec:
       default: main
   workspaces:
     - name: output
+    - name: basic-auth
+      optional: true
+      description: Optional Secret with username + password (GitHub PAT) for private HTTPS repos
   steps:
     - name: clone
       image: registry.redhat.io/openshift-pipelines/pipelines-git-init-rhel8:v1.14.0
+      env:
+        - name: HOME
+          value: /tekton/home
       script: |
         #!/usr/bin/env bash
         set -euo pipefail
         CHECKOUT_DIR="$(workspaces.output.path)"
+        REPO_URL="$(params.url)"
+        REVISION="$(params.revision)"
+
         # PVC workspaces may retain files from a previous run (no find in git-init image)
         shopt -s dotglob nullglob
         rm -rf "${CHECKOUT_DIR:?}"/*
-        git clone --depth 1 --branch "$(params.revision)" "$(params.url)" "$CHECKOUT_DIR"
+
+        AUTH_DIR="$(workspaces.basic-auth.path)"
+        if [[ -n "${AUTH_DIR}" && -f "${AUTH_DIR}/username" && -f "${AUTH_DIR}/password" ]]; then
+          USER="$(cat "${AUTH_DIR}/username")"
+          PASS="$(cat "${AUTH_DIR}/password")"
+          # Inject credentials into HTTPS URL for private GitHub repos
+          REPO_URL="$(echo "${REPO_URL}" | sed -E "s#https://#https://${USER}:${PASS}@#")"
+        fi
+
+        git clone --depth 1 --branch "${REVISION}" "${REPO_URL}" "${CHECKOUT_DIR}"
 ---
 apiVersion: tekton.dev/v1
 kind: Task

@@ -12,12 +12,17 @@ spec:
     - name: quay-repo
       type: string
       default: rhtas-hello-world
+    - name: git-url
+      type: string
+      default: https://github.com/navyseal8/rhtas-cosign-openshift.git
     - name: git-revision
       type: string
       default: main
   workspaces:
     - name: shared-workspace
     - name: docker-credentials
+    - name: git-credentials
+      optional: true
   tasks:
     - name: fetch-source
       taskRef:
@@ -25,9 +30,12 @@ spec:
       workspaces:
         - name: output
           workspace: shared-workspace
+        - name: basic-auth
+          workspace: git-credentials
+          optional: true
       params:
         - name: url
-          value: https://github.com/acme/rhtas-cosign-openshift-demos.git
+          value: $(params.git-url)
         - name: revision
           value: $(params.git-revision)
 
