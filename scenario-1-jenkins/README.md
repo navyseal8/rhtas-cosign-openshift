@@ -89,25 +89,21 @@ The `Selected Git installation does not exist` warning is harmless on Kubernetes
 
 ### `process apparently never started in ...@tmp/durable-...`
 
-Checkout can succeed and the **next** `sh` step still fails. Common causes on OpenShift Jenkins agents:
+This is a Jenkins durable-task issue on OpenShift multi-container agent pods. The Jenkinsfile uses `defaultContainer 'builder'` for Maven, `container('jnlp')` for git, and `container()` for other sidecars. Ensure all pod containers set `HOME=/home/jenkins/agent` and `workingDir: /home/jenkins/agent`.
 
-1. **`HOME` must match the workspace parent** — Kubernetes agents use `workingDir: /home/jenkins/agent`. Do not set `HOME` to `/var/tmp/...` on the default/builder container; Jenkins durable-task writes shell wrappers under `${WORKSPACE}@tmp` relative to `HOME`. Maven cache and buildah config use separate paths (`MAVEN_OPTS`, `/var/tmp/buildah-home`).
-
-2. **Multi-container pods** — use `defaultContainer 'builder'` for Maven `sh` steps; run git in `container('jnlp')`.
-
-3. **Controller flag** (if sidecar `sh` steps still fail):
+If it persists, ask your Jenkins admin to set on the controller:
 
 ```text
 -Dorg.jenkinsci.plugins.durabletask.BourneShellScript.USE_BINARY_WRAPPER=true
 ```
 
-4. **Buildah** needs `anyuid` SCC on the agent service account:
+**Buildah** also needs `anyuid` SCC on the agent service account:
 
 ```bash
 oc apply -f openshift/scc-anyuid-rhtas-signer.yaml
 ```
 
-If it persists, enable launch diagnostics on the Jenkins controller:
+Enable launch diagnostics if needed:
 
 ```text
 -Dorg.jenkinsci.plugins.durabletask.BourneShellScript.LAUNCH_DIAGNOSTICS=true

@@ -19,13 +19,14 @@ spec:
     - name: fetch-source
       taskRef:
         name: git-clone
-        kind: ClusterTask
       workspaces:
         - name: output
           workspace: shared-workspace
       params:
         - name: url
           value: https://github.com/acme/rhtas-cosign-openshift-demos.git
+        - name: revision
+          value: main
 
     - name: maven-build
       runAfter: [fetch-source]

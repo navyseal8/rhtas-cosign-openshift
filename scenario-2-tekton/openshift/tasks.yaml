@@ -1,6 +1,32 @@
 apiVersion: tekton.dev/v1
 kind: Task
 metadata:
+  name: git-clone
+  namespace: rhtas-demo-ci
+spec:
+  description: Clone a Git repository into the shared workspace
+  params:
+    - name: url
+      type: string
+    - name: revision
+      type: string
+      default: main
+  workspaces:
+    - name: output
+  steps:
+    - name: clone
+      image: registry.redhat.io/openshift-pipelines/pipelines-git-init-rhel8:v1.14.0
+      script: |
+        #!/usr/bin/env bash
+        set -euo pipefail
+        CHECKOUT_DIR="$(workspaces.output.path)"
+        # PVC workspaces may retain files from a previous run
+        find "$CHECKOUT_DIR" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+        git clone --depth 1 --branch "$(params.revision)" "$(params.url)" "$CHECKOUT_DIR"
+---
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
   name: maven-build
   namespace: rhtas-demo-ci
 spec:
