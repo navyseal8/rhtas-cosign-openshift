@@ -111,16 +111,41 @@ spec:
     - name: build-and-push
       image: quay.io/buildah/stable:latest
       workingDir: $(workspaces.source.path)/$(params.CONTEXT)
+      # OpenShift: buildah image user "build" (uid 1000) + SETFCAP via pipelines-scc
+      securityContext:
+        runAsUser: 1000
+        allowPrivilegeEscalation: true
+        capabilities:
+          add: ["SETFCAP"]
       env:
-        - name: DOCKER_CONFIG
-          value: $(workspaces.dockerconfig.path)
+        - name: HOME
+          value: /home/build
+        - name: STORAGE_DRIVER
+          value: vfs
+        - name: BUILDAH_ISOLATION
+          value: chroot
+        - name: BUILDAH_FORMAT
+          value: docker
       script: |
         #!/usr/bin/env bash
         set -euo pipefail
+
+        # Tekton mounts docker-registry secrets as .dockerconfigjson; buildah wants config.json
+        mkdir -p /home/build/.docker
+        if [[ -f "$(workspaces.dockerconfig.path)/.dockerconfigjson" ]]; then
+          cp "$(workspaces.dockerconfig.path)/.dockerconfigjson" /home/build/.docker/config.json
+        elif [[ -f "$(workspaces.dockerconfig.path)/config.json" ]]; then
+          cp "$(workspaces.dockerconfig.path)/config.json" /home/build/.docker/config.json
+        fi
+        export DOCKER_CONFIG=/home/build/.docker
+
         buildah bud \
+          --storage-driver vfs \
+          --isolation chroot \
           --build-arg BUILD_VERSION="$(params.BUILD_VERSION)" \
           --build-arg SCENARIO=tekton \
           -t "$(params.IMAGE)" \
           -f Dockerfile .
-        buildah push --digestfile /tmp/digest "$(params.IMAGE)"
+
+        buildah push --storage-driver vfs --digestfile /tmp/digest "$(params.IMAGE)"
         cat /tmp/digest | tee "$(results.IMAGE_DIGEST.path)"
