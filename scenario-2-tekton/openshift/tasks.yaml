@@ -20,8 +20,9 @@ spec:
         #!/usr/bin/env bash
         set -euo pipefail
         CHECKOUT_DIR="$(workspaces.output.path)"
-        # PVC workspaces may retain files from a previous run
-        find "$CHECKOUT_DIR" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+        # PVC workspaces may retain files from a previous run (no find in git-init image)
+        shopt -s dotglob nullglob
+        rm -rf "${CHECKOUT_DIR:?}"/*
         git clone --depth 1 --branch "$(params.revision)" "$(params.url)" "$CHECKOUT_DIR"
 ---
 apiVersion: tekton.dev/v1
