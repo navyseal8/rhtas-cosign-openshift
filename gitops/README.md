@@ -14,11 +14,14 @@ Jenkins/Tekton pipeline
 
 ## Setup
 
-### 1. Create dev namespace
+### 1. Create dev namespace and grant Argo CD access
 
 ```bash
 oc apply -f manifests/hello-world/namespace.yaml
+oc apply -f openshift/argocd-rbac-dev.yaml
 ```
+
+The RoleBinding lets `openshift-gitops-argocd-application-controller` create Deployments, Services, Routes, etc. in `rhtas-demo-dev`.
 
 ### 2. Image pull secret in dev namespace
 

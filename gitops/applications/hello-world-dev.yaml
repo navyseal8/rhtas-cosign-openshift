@@ -9,7 +9,7 @@ spec:
   project: default
   source:
   # Update to your GitHub repository
-    repoURL: https://github.com/acme/rhtas-cosign-openshift-demos.git
+    repoURL: https://github.com/navyseal8/rhtas-cosign-openshift.git
     targetRevision: main
     path: gitops/manifests/hello-world
   destination:

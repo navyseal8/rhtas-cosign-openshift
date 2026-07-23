@@ -14,7 +14,7 @@ spec:
     spec:
       containers:
         - name: hello-world
-          image: quay.io/acme/rhtas-hello-world:placeholder-0
+          image: quay.io/rhn_support_jeretan/hello-world-cosign:tekton-3c877f5f-2381-447d-b938-f93cdf4e9f9d
           ports:
             - containerPort: 8080
               name: http
