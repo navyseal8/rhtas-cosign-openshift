@@ -64,11 +64,13 @@ See [docs/tekton-chains-rhtas.md](docs/tekton-chains-rhtas.md) for full explanat
 ```bash
 tkn pipeline start rhtas-hello-world \
   -n rhtas-demo-ci \
-  --param quay-org=acme \
-  --param quay-repo=rhtas-hello-world \
+  --param quay-org=rhn_support_jeretan \
+  --param quay-repo=hello-world-cosign \
   --param git-url=https://github.com/navyseal8/rhtas-cosign-openshift.git \
+  --param git-revision=main \
   --workspace name=shared-workspace,volumeClaimTemplateFile=openshift/workspace-pvc.yaml \
   --workspace name=docker-credentials,secret=quay-credentials \
+  --workspace name=git-credentials,secret=github-credentials \
   --showlog
 ```
 
