@@ -45,5 +45,5 @@ data:
   COSIGN_ROOT: "https://tuf.trusted-artifact-signer.svc/root.json"
   # Cluster OIDC — required for keyless SA identity
   # COSIGN_OIDC_ISSUER: set via oc patch or kustomize overlay per cluster
-  COSIGN_OIDC_ISSUER: "REPLACE_WITH_serviceAccountIssuer"
-  COSIGN_CERTIFICATE_OIDC_ISSUER: "REPLACE_WITH_serviceAccountIssuer"
+  COSIGN_OIDC_ISSUER: "https://kubernetes.default.svc"
+  COSIGN_CERTIFICATE_OIDC_ISSUER: "https://kubernetes.default.svc"
