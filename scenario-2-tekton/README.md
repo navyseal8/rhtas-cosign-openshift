@@ -12,7 +12,7 @@ Same build and SAST steps as Jenkins, but **no cosign step in the Pipeline**. [T
 ## Flow
 
 ```
-PipelineRun → maven build → SAST → buildah push → gitops-bump (commit newTag)
+PipelineRun → maven build → SAST → buildah push → version-bump (commit newTag)
                     ↓                        ↓
          Tekton Chains (async)         Argo CD syncs rhtas-demo-dev
                     ↓
@@ -94,7 +94,7 @@ tkn pipeline start rhtas-hello-world \
   --showlog
 ```
 
-After `build-push`, **gitops-bump** updates `newTag` / `newName` in
+After `build-push`, **version-bump** updates `newTag` / `newName` in
 `gitops/manifests/hello-world/kustomization.yaml` (and trust ConfigMap fields)
 then pushes to `gitops-revision` so Argo CD syncs the new image.
 
@@ -135,7 +135,7 @@ cosign verify \
 | File | Description |
 |------|-------------|
 | `openshift/pipeline.yaml` | Pipeline — build, SAST, push only |
-| `openshift/tasks.yaml` | Reusable Tasks (git-clone, maven, semgrep, buildah, gitops-bump) |
+| `openshift/tasks.yaml` | Reusable Tasks (git-clone, maven, semgrep, buildah, version-bump) |
 | `openshift/pipeline-sa.yaml` | Builder SA used by Chains signing identity |
 | `openshift/scc-pipelines-builder.yaml` | Bind builder SA to `pipelines-scc` (buildah) |
 | `openshift/chains-rhtas-patch.yaml` | Chains env ConfigMap (Fulcio/Rekor/TUF) |

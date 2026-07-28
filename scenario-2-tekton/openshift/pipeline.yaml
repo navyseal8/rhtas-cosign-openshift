@@ -29,7 +29,7 @@ spec:
     - name: shared-workspace
     - name: docker-credentials
     - name: git-credentials
-      description: GitHub username + PAT (read for clone, write for gitops-bump)
+      description: GitHub username + PAT (read for clone, write for version-bump)
   tasks:
     - name: fetch-source
       taskRef:
@@ -78,10 +78,10 @@ spec:
         - name: BUILD_VERSION
           value: tekton-$(context.pipelineRun.name)
 
-    - name: gitops-bump
+    - name: version-bump
       runAfter: [build-push]
       taskRef:
-        name: gitops-bump
+        name: version-bump
       workspaces:
         - name: basic-auth
           workspace: git-credentials

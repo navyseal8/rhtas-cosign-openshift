@@ -171,7 +171,7 @@ spec:
 apiVersion: tekton.dev/v1
 kind: Task
 metadata:
-  name: gitops-bump
+  name: version-bump
   namespace: rhtas-demo-ci
 spec:
   description: >
@@ -212,7 +212,7 @@ spec:
 
         AUTH_DIR="$(workspaces.basic-auth.path)"
         if [[ ! -f "${AUTH_DIR}/username" || ! -f "${AUTH_DIR}/password" ]]; then
-          echo "gitops-bump requires basic-auth workspace (username + password/PAT)" >&2
+          echo "version-bump requires basic-auth workspace (username + password/PAT)" >&2
           exit 1
         fi
         USER="$(cat "${AUTH_DIR}/username")"
