@@ -124,7 +124,7 @@ spec:
       emptyDir: {}
   steps:
     - name: build-and-push
-      image: registry.redhat.io/rhel9/buildah:latest
+      image: registry.access.redhat.com/ubi9/buildah:9.8-1784750807
       workingDir: $(workspaces.source.path)/$(params.CONTEXT)
       # Tip 4 (RH): uid 1000 + SETFCAP + allowPrivilegeEscalation under pipelines-scc
       securityContext:
