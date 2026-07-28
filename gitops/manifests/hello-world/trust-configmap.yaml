@@ -7,11 +7,11 @@ metadata:
 data:
   # Populated/updated by CI or operators for the live demo. Defaults are placeholders.
   SCENARIO: "tekton"
-  BUILD_VERSION: "tekton-rhtas-hello-world-run-7vmjs"
-  IMAGE_REF: "quay.io/rhn_support_jeretan/hello-world-cosign:tekton-47e703ff-211f-42d5-b53f-36707278bfd1"
-  IMAGE_DIGEST: "sha256:bdb69e4781aec3813ad895b8aae150189701f284614769b308a5cda42da0cf40"
+  BUILD_VERSION: "tekton-rhtas-hello-world-run-wz68p"
+  IMAGE_REF: "quay.io/rhn_support_jeretan/hello-world-cosign:tekton-fdcda632-3523-4a84-b3ab-ddacd10a2b06"
+  IMAGE_DIGEST: "sha256:f184e346a6e2606d683a210c6ec54a4d5e8b4af05f3c3e04ccbe865076c063b6"
   SIGNER_IDENTITY: "https://kubernetes.io/namespaces/rhtas-demo-ci/serviceaccounts/tekton-chains-builder"
-  SIGNED_AT: "2026-07-28T14:11:33Z"
+  SIGNED_AT: "2026-07-28T14:50:47Z"
   FULCIO_URL: "https://fulcio-server-trusted-artifact-signer.apps.cluster-7s4dl.dyn.redhatworkshops.io"
   REKOR_URL: "https://rekor-server-trusted-artifact-signer.apps.cluster-7s4dl.dyn.redhatworkshops.io"
   OIDC_ISSUER: "https://kubernetes.default.svc"
