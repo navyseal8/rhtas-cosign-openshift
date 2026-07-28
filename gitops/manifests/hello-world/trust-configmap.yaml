@@ -16,5 +16,5 @@ data:
   REKOR_URL: "https://rekor.trusted-artifact-signer.svc"
   OIDC_ISSUER: "https://kubernetes.default.svc"
   GIT_COMMIT: "unknown"
-  BUILDER_IMAGE: "registry.access.redhat.com/hi/openjdk:21.0.11"
+  BUILDER_IMAGE: "registry.access.redhat.com/hi/openjdk:21.0.11-builder"
   RUNTIME_IMAGE: "registry.access.redhat.com/hi/openjdk:21.0.11-runtime"
