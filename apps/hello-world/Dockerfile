@@ -7,8 +7,10 @@
 
 # Build stage
 FROM registry.access.redhat.com/hi/openjdk:21.0.11-builder AS builder
+USER root
 WORKDIR /app
 COPY . .
+RUN microdnf install -y mvn && microdnf clean all
 # Spring Boot app: compile and package with Maven (not plain javac)
 RUN mvn -B -ntp -e -DskipTests package \
     && cp target/hello-world-*.jar /app/app.jar
