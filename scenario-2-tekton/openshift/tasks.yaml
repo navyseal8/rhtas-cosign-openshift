@@ -160,8 +160,8 @@ spec:
           --build-arg BUILD_VERSION="$(params.BUILD_VERSION)" \
           --build-arg SCENARIO=tekton \
           --build-arg IMAGE_REF="$(params.IMAGE)" \
-          --build-arg BUILDER_IMAGE=registry.access.redhat.com/ubi9/openjdk-21:1.21 \
-          --build-arg RUNTIME_IMAGE=registry.access.redhat.com/ubi9/openjdk-21-runtime:1.21 \
+          --build-arg BUILDER_IMAGE=registry.access.redhat.com/hi/openjdk:21.0.11 \
+          --build-arg RUNTIME_IMAGE=registry.access.redhat.com/hi/openjdk:21.0.11-runtime \
           -t "$(params.IMAGE)" \
           -f Dockerfile .
 

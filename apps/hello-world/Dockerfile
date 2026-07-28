@@ -1,34 +1,26 @@
-# Multistage build using Red Hat UBI OpenJDK images from the Ecosystem Catalog:
-#   https://catalog.redhat.com/en/software/containers/ubi9/openjdk-21
-#   https://catalog.redhat.com/en/software/containers/ubi9/openjdk-21-runtime
+# Multistage build on Red Hat hardened images (images.redhat.com — "hi" namespace).
+# Catalog: https://images.redhat.com/
 #
-# Stage 1 (builder): JDK + Maven — compiles the Spring Boot app
-# Stage 2 (runtime): JRE-only hardened runtime — no compiler/Maven (smaller attack surface)
+# Build stage  → registry.access.redhat.com/hi/openjdk:21.0.11         (JDK + build tools)
+# Runtime stage → registry.access.redhat.com/hi/openjdk:21.0.11-runtime (minimal runtime)
+# Prefer numbered tags over :latest / :latest-runtime for reproducible builds.
 
-ARG BUILDER_IMAGE=registry.access.redhat.com/ubi9/openjdk-21:1.21
-ARG RUNTIME_IMAGE=registry.access.redhat.com/ubi9/openjdk-21-runtime:1.21
-
-# ---------- build ----------
-FROM ${BUILDER_IMAGE} AS builder
-
-USER root
-WORKDIR /build
-
-COPY pom.xml .
-COPY src ./src
-
-# Use the OpenShift-friendly Maven profile when available in the UBI image
+# Build stage
+FROM registry.access.redhat.com/hi/openjdk:21.0.11 AS builder
+WORKDIR /app
+COPY . .
+# Spring Boot app: compile and package with Maven (not plain javac)
 RUN mvn -B -ntp -e -DskipTests package \
-    && mv target/hello-world-*.jar /build/app.jar
+    && cp target/hello-world-*.jar /app/app.jar
 
-# ---------- runtime ----------
-FROM ${RUNTIME_IMAGE}
+# Runtime stage
+FROM registry.access.redhat.com/hi/openjdk:21.0.11-runtime
 
 LABEL name="rhtas-hello-world" \
       summary="RHTAS cosign trust demo application" \
-      description="Serves a static trust page with build version, signer identity, and Fulcio endpoint" \
+      description="Serves a trust page with build version, signer identity, and Fulcio endpoint" \
       maintainer="rhtas-demo" \
-      io.openshift.tags="rhtas,cosign,java,demo" \
+      io.openshift.tags="rhtas,cosign,java,hardened,demo" \
       com.redhat.component="rhtas-hello-world"
 
 ARG BUILD_VERSION=unknown
@@ -41,8 +33,8 @@ ARG REKOR_URL=unknown
 ARG OIDC_ISSUER=unknown
 ARG IMAGE_REF=unknown
 ARG GIT_COMMIT=unknown
-ARG BUILDER_IMAGE=registry.access.redhat.com/ubi9/openjdk-21:1.21
-ARG RUNTIME_IMAGE=registry.access.redhat.com/ubi9/openjdk-21-runtime:1.21
+ARG BUILDER_IMAGE=registry.access.redhat.com/hi/openjdk:21.0.11
+ARG RUNTIME_IMAGE=registry.access.redhat.com/hi/openjdk:21.0.11-runtime
 
 ENV BUILD_VERSION=${BUILD_VERSION} \
     IMAGE_DIGEST=${IMAGE_DIGEST} \
@@ -55,12 +47,10 @@ ENV BUILD_VERSION=${BUILD_VERSION} \
     IMAGE_REF=${IMAGE_REF} \
     GIT_COMMIT=${GIT_COMMIT} \
     BUILDER_IMAGE=${BUILDER_IMAGE} \
-    RUNTIME_IMAGE=${RUNTIME_IMAGE} \
-    JAVA_APP_JAR=/deployments/app.jar
+    RUNTIME_IMAGE=${RUNTIME_IMAGE}
 
-WORKDIR /deployments
-COPY --from=builder --chown=185:0 /build/app.jar /deployments/app.jar
+WORKDIR /app
+COPY --from=builder /app/app.jar /app/app.jar
 
-USER 185
 EXPOSE 8080
-ENTRYPOINT ["java", "-jar", "/deployments/app.jar"]
+ENTRYPOINT ["java", "-jar", "/app/app.jar"]
