@@ -18,7 +18,7 @@ All scenarios build and deploy the same [Java hello-world app](apps/hello-world/
 - **Fulcio / Rekor / OIDC issuer** — RHTAS trust-service endpoints used for keyless signing
 - **Copy-paste `cosign verify`** — so the audience can re-check the image live
 
-The image is a **multistage** build: compile with `registry.redhat.io/ubi9/openjdk-21:1.21` (JDK + Maven), then run on the Hummingbird hardened runtime `registry.access.redhat.com/hi/openjdk:21.0.11-runtime` (pin numbered tags, not `:latest`).
+The image is a **multistage** build: compile with `registry.access.redhat.com/ubi9/openjdk-21:1.21` (JDK + Maven), then run on the Hummingbird hardened runtime `registry.access.redhat.com/hi/openjdk:21.0.11-runtime` (pin numbered tags, not `:latest`).
 ## Repository layout
 
 ```

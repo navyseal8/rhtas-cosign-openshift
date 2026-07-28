@@ -1,10 +1,10 @@
 # Multistage build:
-# Build stage  → registry.redhat.io/ubi9/openjdk-21:1.21              (JDK + Maven)
+# Build stage  → registry.access.redhat.com/ubi9/openjdk-21:1.21              (JDK + Maven)
 # Runtime stage → registry.access.redhat.com/hi/openjdk:21.0.11-runtime (Hummingbird hardened)
 # Prefer numbered tags over :latest for reproducible builds.
 
 # Build stage
-FROM registry.redhat.io/ubi9/openjdk-21:1.21 AS builder
+FROM registry.access.redhat.com/ubi9/openjdk-21:1.21 AS builder
 WORKDIR /app
 COPY . .
 # Spring Boot app: compile and package with Maven (not plain javac)
@@ -31,7 +31,7 @@ ARG REKOR_URL=unknown
 ARG OIDC_ISSUER=unknown
 ARG IMAGE_REF=unknown
 ARG GIT_COMMIT=unknown
-ARG BUILDER_IMAGE=registry.redhat.io/ubi9/openjdk-21:1.21
+ARG BUILDER_IMAGE=registry.access.redhat.com/ubi9/openjdk-21:1.21
 ARG RUNTIME_IMAGE=registry.access.redhat.com/hi/openjdk:21.0.11-runtime
 
 ENV BUILD_VERSION=${BUILD_VERSION} \

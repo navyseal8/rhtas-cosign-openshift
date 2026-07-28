@@ -57,7 +57,7 @@ spec:
     - name: source
   steps:
     - name: mvn-package
-      image: registry.redhat.io/ubi9/openjdk-21:1.21
+      image: registry.access.redhat.com/ubi9/openjdk-21:1.21
       workingDir: $(workspaces.source.path)/$(params.CONTEXT)
       script: |
         #!/usr/bin/env bash
@@ -160,7 +160,7 @@ spec:
           --build-arg BUILD_VERSION="$(params.BUILD_VERSION)" \
           --build-arg SCENARIO=tekton \
           --build-arg IMAGE_REF="$(params.IMAGE)" \
-          --build-arg BUILDER_IMAGE=registry.redhat.io/ubi9/openjdk-21:1.21 \
+          --build-arg BUILDER_IMAGE=registry.access.redhat.com/ubi9/openjdk-21:1.21 \
           --build-arg RUNTIME_IMAGE=registry.access.redhat.com/hi/openjdk:21.0.11-runtime \
           -t "$(params.IMAGE)" \
           -f Dockerfile .

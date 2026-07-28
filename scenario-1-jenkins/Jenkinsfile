@@ -17,7 +17,7 @@ spec:
       value: /home/jenkins/agent
     workingDir: /home/jenkins/agent
   - name: builder
-    image: registry.redhat.io/ubi9/openjdk-21:1.21
+    image: registry.access.redhat.com/ubi9/openjdk-21:1.21
     command: ['cat']
     tty: true
     workingDir: /home/jenkins/agent
