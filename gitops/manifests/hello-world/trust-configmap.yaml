@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hello-world-trust
+  labels:
+    app: hello-world
+data:
+  # Populated/updated by CI or operators for the live demo. Defaults are placeholders.
+  SCENARIO: "tekton"
+  BUILD_VERSION: "unknown"
+  IMAGE_REF: "quay.io/rhn_support_jeretan/hello-world-cosign:unknown"
+  IMAGE_DIGEST: "unknown"
+  SIGNER_IDENTITY: "https://kubernetes.io/namespaces/rhtas-demo-ci/serviceaccounts/tekton-chains-builder"
+  SIGNED_AT: "unknown"
+  FULCIO_URL: "https://fulcio.trusted-artifact-signer.svc"
+  REKOR_URL: "https://rekor.trusted-artifact-signer.svc"
+  OIDC_ISSUER: "https://kubernetes.default.svc"
+  GIT_COMMIT: "unknown"
+  BUILDER_IMAGE: "registry.access.redhat.com/ubi9/openjdk-21:1.21"
+  RUNTIME_IMAGE: "registry.access.redhat.com/ubi9/openjdk-21-runtime:1.21"

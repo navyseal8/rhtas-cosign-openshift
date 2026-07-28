@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title th:text="${title}">RHTAS Cosign Trust Report</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous"/>
+  <link href="https://fonts.googleapis.com/css2?family=Red+Hat+Display:wght@600;700&family=Red+Hat+Text:wght@400;500&family=Red+Hat+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+  <style>
+    :root {
+      --bg: #0f1215;
+      --panel: #1b1f24;
+      --panel-2: #23282e;
+      --ink: #f0f0f0;
+      --muted: #b8bbbe;
+      --line: #3c3f42;
+      --brand: #ee0000;
+      --ok: #3e8635;
+      --warn: #f0ab00;
+      --accent: #73bcf7;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Red Hat Text", Georgia, serif;
+      color: var(--ink);
+      background:
+        radial-gradient(1200px 500px at 10% -10%, rgba(238, 0, 0, 0.18), transparent 55%),
+        radial-gradient(900px 400px at 100% 0%, rgba(115, 188, 247, 0.12), transparent 50%),
+        var(--bg);
+    }
+    main {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 2.5rem 1.25rem 3rem;
+    }
+    .brand {
+      font-family: "Red Hat Display", sans-serif;
+      font-size: 0.85rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--brand);
+      margin: 0 0 0.75rem;
+    }
+    h1 {
+      font-family: "Red Hat Display", sans-serif;
+      font-size: clamp(1.8rem, 4vw, 2.6rem);
+      line-height: 1.15;
+      margin: 0 0 0.75rem;
+    }
+    .lede {
+      color: var(--muted);
+      max-width: 42rem;
+      margin: 0 0 1.75rem;
+      font-size: 1.05rem;
+    }
+    .status {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.45rem 0.85rem;
+      border-radius: 999px;
+      font-size: 0.9rem;
+      font-weight: 500;
+      margin-bottom: 1.75rem;
+      border: 1px solid var(--line);
+      background: var(--panel);
+    }
+    .status.ok { border-color: color-mix(in srgb, var(--ok) 50%, var(--line)); color: #bde5b8; }
+    .status.warn { border-color: color-mix(in srgb, var(--warn) 50%, var(--line)); color: #f9e0a0; }
+    .status-dot {
+      width: 0.55rem;
+      height: 0.55rem;
+      border-radius: 50%;
+      background: currentColor;
+    }
+    .grid {
+      display: grid;
+      gap: 1rem;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      margin-bottom: 1.25rem;
+    }
+    section.panel {
+      background: linear-gradient(180deg, var(--panel) 0%, var(--panel-2) 100%);
+      border: 1px solid var(--line);
+      border-radius: 0.75rem;
+      padding: 1.1rem 1.15rem 1.2rem;
+    }
+    section.panel h2 {
+      font-family: "Red Hat Display", sans-serif;
+      font-size: 0.95rem;
+      margin: 0 0 0.85rem;
+      color: var(--accent);
+    }
+    dl {
+      margin: 0;
+      display: grid;
+      gap: 0.75rem;
+    }
+    dt {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--muted);
+      margin: 0;
+    }
+    dd {
+      margin: 0.2rem 0 0;
+      font-family: "Red Hat Mono", ui-monospace, monospace;
+      font-size: 0.86rem;
+      word-break: break-all;
+      line-height: 1.4;
+    }
+    .wide { grid-column: 1 / -1; }
+    pre {
+      margin: 0;
+      padding: 1rem;
+      overflow-x: auto;
+      background: #0b0d0f;
+      border: 1px solid var(--line);
+      border-radius: 0.5rem;
+      font-family: "Red Hat Mono", ui-monospace, monospace;
+      font-size: 0.8rem;
+      line-height: 1.5;
+      color: #d2f0ff;
+    }
+    .hint {
+      margin: 0.75rem 0 0;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+    footer {
+      margin-top: 1.5rem;
+      color: var(--muted);
+      font-size: 0.85rem;
+    }
+    a { color: var(--accent); }
+  </style>
+</head>
+<body>
+<main>
+  <p class="brand">Red Hat Trusted Artifact Signer</p>
+  <h1>Cosign trust report</h1>
+  <p class="lede">
+    This page is served from a signed container image. Use the fields below to
+    explain keyless signing with Fulcio, the OIDC issuer, and how to re-verify
+    the artifact during the demo.
+  </p>
+
+  <div class="status" th:classappend="${signed} ? ' ok' : ' warn'">
+    <span class="status-dot" aria-hidden="true"></span>
+    <span th:text="${statusLabel}">Status</span>
+    <span aria-hidden="true">·</span>
+    <span th:text="${scenario}">scenario</span>
+  </div>
+
+  <div class="grid">
+    <section class="panel">
+      <h2>Build artifact</h2>
+      <dl>
+        <div>
+          <dt>Build version</dt>
+          <dd th:text="${buildVersion}">unknown</dd>
+        </div>
+        <div>
+          <dt>Git commit</dt>
+          <dd th:text="${gitCommit}">unknown</dd>
+        </div>
+        <div>
+          <dt>Image reference</dt>
+          <dd th:text="${imageRef}">unknown</dd>
+        </div>
+        <div>
+          <dt>Image digest</dt>
+          <dd th:text="${imageDigest}">unknown</dd>
+        </div>
+      </dl>
+    </section>
+
+    <section class="panel">
+      <h2>Signature &amp; identity</h2>
+      <dl>
+        <div>
+          <dt>Certificate identity (signer)</dt>
+          <dd th:text="${signerIdentity}">unsigned</dd>
+        </div>
+        <div>
+          <dt>Signed at</dt>
+          <dd th:text="${signedAt}">unknown</dd>
+        </div>
+        <div>
+          <dt>OIDC issuer</dt>
+          <dd th:text="${oidcIssuer}">unknown</dd>
+        </div>
+      </dl>
+    </section>
+
+    <section class="panel">
+      <h2>RHTAS trust services</h2>
+      <dl>
+        <div>
+          <dt>Fulcio endpoint</dt>
+          <dd th:text="${fulcioUrl}">unknown</dd>
+        </div>
+        <div>
+          <dt>Rekor transparency log</dt>
+          <dd th:text="${rekorUrl}">unknown</dd>
+        </div>
+      </dl>
+    </section>
+
+    <section class="panel">
+      <h2>Hardened base images</h2>
+      <dl>
+        <div>
+          <dt>Builder (UBI OpenJDK 21)</dt>
+          <dd th:text="${builderImage}">unknown</dd>
+        </div>
+        <div>
+          <dt>Runtime (UBI OpenJDK 21 runtime)</dt>
+          <dd th:text="${runtimeImage}">unknown</dd>
+        </div>
+      </dl>
+    </section>
+
+    <section class="panel wide">
+      <h2>Re-verify this image</h2>
+      <pre th:text="${verifyCommand}">cosign verify ...</pre>
+      <p class="hint">
+        Run this from a workstation initialized against your RHTAS TUF root.
+        Matching identity + issuer proves the image was signed by the expected
+        pipeline ServiceAccount via Fulcio.
+      </p>
+    </section>
+  </div>
+
+  <footer>
+    JSON twin: <a href="/api/info">/api/info</a>
+    · Health: <a href="/actuator/health">/actuator/health</a>
+  </footer>
+</main>
+</body>
+</html>

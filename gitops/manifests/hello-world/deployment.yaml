@@ -14,7 +14,7 @@ spec:
     spec:
       containers:
         - name: hello-world
-          image: quay.io/acme/rhtas-hello-world:placeholder-0
+          image: quay.io/rhn_support_jeretan/hello-world-cosign:placeholder-0
           ports:
             - containerPort: 8080
               name: http

@@ -11,10 +11,10 @@ resources:
   - route.yaml
 
 images:
-  - name: quay.io/acme/rhtas-hello-world
-    newName: quay.io/acme/rhtas-hello-world
+  - name: quay.io/rhn_support_jeretan/hello-world-cosign
+    newName: quay.io/rhn_support_jeretan/hello-world-cosign
     newTag: placeholder-0
 
-commonLabels:
+labels:
   app.kubernetes.io/name: hello-world
   app.kubernetes.io/part-of: rhtas-cosign-demos
