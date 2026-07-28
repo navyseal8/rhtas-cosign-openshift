@@ -50,7 +50,7 @@ public class BuildInfoController {
     @Value("${app.tuf.url:unknown}")
     private String tufUrl;
 
-    @Value("${app.cosign.image:registry.redhat.io/rhtas/cosign-rhel9}")
+    @Value("${app.cosign.image:registry.access.redhat.com/hi/cosign:3.1.1}")
     private String cosignImage;
 
     @GetMapping("/")
@@ -128,13 +128,6 @@ public class BuildInfoController {
         return "<oidc-issuer>";
     }
 
-    private String verifyTuf() {
-        if (tufUrl != null && !tufUrl.isBlank() && !"unknown".equals(tufUrl)) {
-            return tufUrl;
-        }
-        return "<tuf-url>";
-    }
-
     private String verifyCommand() {
         return "cosign verify \\\n"
                 + "  --certificate-identity='" + verifyIdentity() + "' \\\n"
@@ -143,19 +136,16 @@ public class BuildInfoController {
     }
 
     private String verifyCommandPodman() {
-        String tuf = verifyTuf();
+        // Hummingbird hi/cosign is distroless: entrypoint is cosign (see images.redhat.com).
+        // Shape matches the catalog example; flags use RHTAS keyless identity for this demo image.
         String image = (cosignImage != null && !cosignImage.isBlank())
                 ? cosignImage
-                : "registry.redhat.io/rhtas/cosign-rhel9";
-        return "podman run --rm -it \\\n"
-                + "  -e COSIGN_YES=true \\\n"
+                : "registry.access.redhat.com/hi/cosign:3.1.1";
+        return "podman run --rm \\\n"
                 + "  " + image + " \\\n"
-                + "  sh -c \"\n"
-                + "    cosign initialize --mirror '" + tuf + "' --root '" + tuf + "/root.json' &&\n"
-                + "    cosign verify \\\n"
-                + "      --certificate-identity='" + verifyIdentity() + "' \\\n"
-                + "      --certificate-oidc-issuer='" + verifyIssuer() + "' \\\n"
-                + "      " + verifyImage() + "\n"
-                + "  \"";
+                + "  verify \\\n"
+                + "    --certificate-identity='" + verifyIdentity() + "' \\\n"
+                + "    --certificate-oidc-issuer='" + verifyIssuer() + "' \\\n"
+                + "    " + verifyImage();
     }
 }

@@ -34,7 +34,7 @@ ARG GIT_COMMIT=unknown
 ARG BUILDER_IMAGE=registry.access.redhat.com/ubi9/openjdk-21:1.21
 ARG RUNTIME_IMAGE=registry.access.redhat.com/hi/openjdk:21.0.11-runtime
 ARG TUF_URL=unknown
-ARG COSIGN_IMAGE=registry.redhat.io/rhtas/cosign-rhel9
+ARG COSIGN_IMAGE=registry.access.redhat.com/hi/cosign:3.1.1
 
 ENV BUILD_VERSION=${BUILD_VERSION} \
     IMAGE_DIGEST=${IMAGE_DIGEST} \

@@ -232,14 +232,17 @@
       </p>
       <pre th:text="${verifyCommand}">cosign verify ...</pre>
       <p class="hint">
-        Or via the RHTAS Cosign container image (initializes TUF inside the container):
+        Or via the Hummingbird hardened Cosign image
+        (<a href="https://images.redhat.com/?name=cosign&amp;version=3">images.redhat.com</a>
+        — distroless entrypoint is <code>cosign</code>):
       </p>
-      <pre th:text="${verifyCommandPodman}">podman run ... cosign verify ...</pre>
+      <pre th:text="${verifyCommandPodman}">podman run --rm registry.access.redhat.com/hi/cosign:3.1.1 verify ...</pre>
       <p class="hint">
         Matching identity + issuer proves the image was signed by the expected
-        pipeline ServiceAccount via Fulcio. Use a reachable TUF URL (cluster route
-        or in-cluster service) for the Podman form; <code>podman login registry.redhat.io</code>
-        may be required to pull the Cosign image.
+        pipeline ServiceAccount via Fulcio. Catalog example verifies Red Hat–signed
+        <code>hi/*</code> images with <code>--key</code> and
+        <code>SIGSTORE_REKOR_PUBLIC_KEY</code>; this demo uses keyless Fulcio identity
+        flags against the same <code>hi/cosign</code> image.
       </p>
     </section>
   </div>
