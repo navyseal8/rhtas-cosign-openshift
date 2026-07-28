@@ -1,21 +1,17 @@
-# Multistage build on Red Hat hardened images (images.redhat.com — "hi" namespace).
-# Catalog: https://images.redhat.com/
-#
-# Build stage  → registry.access.redhat.com/hi/openjdk:21.0.11-builder  (JDK + Maven)
-# Runtime stage → registry.access.redhat.com/hi/openjdk:21.0.11-runtime (minimal runtime)
-# Prefer numbered tags over :latest / :latest-runtime for reproducible builds.
+# Multistage build:
+# Build stage  → registry.redhat.io/ubi9/openjdk-21:1.21              (JDK + Maven)
+# Runtime stage → registry.access.redhat.com/hi/openjdk:21.0.11-runtime (Hummingbird hardened)
+# Prefer numbered tags over :latest for reproducible builds.
 
 # Build stage
-FROM registry.access.redhat.com/hi/openjdk:21.0.11-builder AS builder
-USER root
+FROM registry.redhat.io/ubi9/openjdk-21:1.21 AS builder
 WORKDIR /app
 COPY . .
-RUN microdnf install -y mvn && microdnf clean all
 # Spring Boot app: compile and package with Maven (not plain javac)
 RUN mvn -B -ntp -e -DskipTests package \
     && cp target/hello-world-*.jar /app/app.jar
 
-# Runtime stage
+# Runtime stage (Hummingbird / Red Hat Hardened Images)
 FROM registry.access.redhat.com/hi/openjdk:21.0.11-runtime
 
 LABEL name="rhtas-hello-world" \
@@ -35,7 +31,7 @@ ARG REKOR_URL=unknown
 ARG OIDC_ISSUER=unknown
 ARG IMAGE_REF=unknown
 ARG GIT_COMMIT=unknown
-ARG BUILDER_IMAGE=registry.access.redhat.com/hi/openjdk:21.0.11-builder
+ARG BUILDER_IMAGE=registry.redhat.io/ubi9/openjdk-21:1.21
 ARG RUNTIME_IMAGE=registry.access.redhat.com/hi/openjdk:21.0.11-runtime
 
 ENV BUILD_VERSION=${BUILD_VERSION} \
