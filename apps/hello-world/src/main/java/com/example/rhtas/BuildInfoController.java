@@ -74,7 +74,7 @@ public class BuildInfoController {
         model.addAttribute("signed", signed);
         model.addAttribute("statusLabel", signed ? "Keyless signature present" : "Unsigned / not yet signed");
         model.addAttribute("verifyCommand", verifyCommand());
-        model.addAttribute("verifyCommandPodman", verifyCommandPodman());
+        model.addAttribute("verifyCommandOc", verifyCommandOc());
         return "trust";
     }
 
@@ -99,7 +99,7 @@ public class BuildInfoController {
         body.put("cosignImage", cosignImage);
         body.put("signed", isSigned(signerIdentity));
         body.put("verifyCommand", verifyCommand());
-        body.put("verifyCommandPodman", verifyCommandPodman());
+        body.put("verifyCommandOc", verifyCommandOc());
         return body;
     }
 
@@ -135,15 +135,15 @@ public class BuildInfoController {
                 + "  " + verifyImage();
     }
 
-    private String verifyCommandPodman() {
-        // Hummingbird hi/cosign is distroless: entrypoint is cosign (see images.redhat.com).
-        // Shape matches the catalog example; flags use RHTAS keyless identity for this demo image.
+    private String verifyCommandOc() {
+        // Run hi/cosign in-cluster so kubernetes://kubernetes.default.svc is reachable.
+        // Distroless entrypoint is cosign; args after -- are passed through.
         String image = (cosignImage != null && !cosignImage.isBlank())
                 ? cosignImage
                 : "registry.access.redhat.com/hi/cosign:3.1.1";
-        return "podman run --rm \\\n"
-                + "  " + image + " \\\n"
-                + "  verify \\\n"
+        return "oc run --rm --restart=Never cosign-verify \\\n"
+                + "  --image=" + image + " \\\n"
+                + "  -- verify \\\n"
                 + "    --certificate-identity='" + verifyIdentity() + "' \\\n"
                 + "    --certificate-oidc-issuer='" + verifyIssuer() + "' \\\n"
                 + "    " + verifyImage();

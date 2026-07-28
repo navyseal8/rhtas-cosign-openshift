@@ -232,17 +232,15 @@
       </p>
       <pre th:text="${verifyCommand}">cosign verify ...</pre>
       <p class="hint">
-        Or via the Hummingbird hardened Cosign image
-        (<a href="https://images.redhat.com/?name=cosign&amp;version=3">images.redhat.com</a>
-        — distroless entrypoint is <code>cosign</code>):
+        Or in-cluster with the Hummingbird hardened Cosign image
+        (<a href="https://images.redhat.com/?name=cosign&amp;version=3">images.redhat.com</a>)
+        so the cluster OIDC issuer is reachable:
       </p>
-      <pre th:text="${verifyCommandPodman}">podman run --rm registry.access.redhat.com/hi/cosign:3.1.1 verify ...</pre>
+      <pre th:text="${verifyCommandOc}">oc run --rm --image=registry.access.redhat.com/hi/cosign:3.1.1 -- verify ...</pre>
       <p class="hint">
         Matching identity + issuer proves the image was signed by the expected
-        pipeline ServiceAccount via Fulcio. Catalog example verifies Red Hat–signed
-        <code>hi/*</code> images with <code>--key</code> and
-        <code>SIGSTORE_REKOR_PUBLIC_KEY</code>; this demo uses keyless Fulcio identity
-        flags against the same <code>hi/cosign</code> image.
+        pipeline ServiceAccount via Fulcio. Requires a kubeconfig with permission
+        to create pods in the current project.
       </p>
     </section>
   </div>
