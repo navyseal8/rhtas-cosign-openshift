@@ -60,6 +60,8 @@ oc apply -f applications/hello-world-dev.yaml
 
 Update `spec.source.repoURL` to your GitHub repo URL.
 
+> **Important:** The Application path must point at the Kustomize directory and must **not** use `directory.recurse: true`. Recurse applies `kustomization.yaml` as a Kubernetes object and fails with “Kustomization CRD is installed”. Argo CD auto-detects `kustomization.yaml` and runs `kustomize build`.
+
 ### 5. Verify sync
 
 ```bash

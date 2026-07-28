@@ -8,12 +8,12 @@ metadata:
 spec:
   project: default
   source:
-  # Update to your GitHub repository
+    # Update to your GitHub repository
     repoURL: https://github.com/navyseal8/rhtas-cosign-openshift.git
     targetRevision: main
     path: gitops/manifests/hello-world
-    directory:
-      recurse: true
+    # Do NOT set source.directory.recurse — that treats kustomization.yaml as a
+    # cluster CRD. With kustomization.yaml present, Argo CD runs `kustomize build`.
   destination:
     server: https://kubernetes.default.svc
     namespace: rhtas-demo-dev

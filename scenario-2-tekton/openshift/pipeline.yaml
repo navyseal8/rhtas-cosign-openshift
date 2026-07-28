@@ -18,11 +18,18 @@ spec:
     - name: git-revision
       type: string
       default: main
+    - name: gitops-url
+      type: string
+      default: https://github.com/navyseal8/rhtas-cosign-openshift.git
+      description: Repo that contains gitops/manifests (often same as git-url)
+    - name: gitops-revision
+      type: string
+      default: main
   workspaces:
     - name: shared-workspace
     - name: docker-credentials
     - name: git-credentials
-      optional: true
+      description: GitHub username + PAT (read for clone, write for gitops-bump)
   tasks:
     - name: fetch-source
       taskRef:
@@ -70,5 +77,24 @@ spec:
           value: quay.io/$(params.quay-org)/$(params.quay-repo):tekton-$(context.pipelineRun.uid)
         - name: BUILD_VERSION
           value: tekton-$(context.pipelineRun.name)
+
+    - name: gitops-bump
+      runAfter: [build-push]
+      taskRef:
+        name: gitops-bump
+      workspaces:
+        - name: basic-auth
+          workspace: git-credentials
+      params:
+        - name: IMAGE
+          value: quay.io/$(params.quay-org)/$(params.quay-repo):tekton-$(context.pipelineRun.uid)
+        - name: IMAGE_DIGEST
+          value: $(tasks.build-push.results.IMAGE_DIGEST)
+        - name: BUILD_VERSION
+          value: tekton-$(context.pipelineRun.name)
+        - name: GITOPS_URL
+          value: $(params.gitops-url)
+        - name: GITOPS_REVISION
+          value: $(params.gitops-revision)
 
   # No cosign task — Tekton Chains signs after build-push completes

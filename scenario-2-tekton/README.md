@@ -12,13 +12,11 @@ Same build and SAST steps as Jenkins, but **no cosign step in the Pipeline**. [T
 ## Flow
 
 ```
-PipelineRun → maven build → SAST → buildah push (no cosign in YAML)
-                    ↓
-         Tekton Chains (async, ~60s)
+PipelineRun → maven build → SAST → buildah push → gitops-bump (commit newTag)
+                    ↓                        ↓
+         Tekton Chains (async)         Argo CD syncs rhtas-demo-dev
                     ↓
     cosign sign + Rekor entry (identity = TaskRun ServiceAccount)
-                    ↓
-         chains.tekton.dev/signed=true on TaskRun
 ```
 
 ## Setup
@@ -72,6 +70,15 @@ See [docs/tekton-chains-rhtas.md](docs/tekton-chains-rhtas.md) for full explanat
 
 ### 3. Run the pipeline
 
+Create a GitHub PAT with **repo** write access (used for clone + GitOps commit):
+
+```bash
+oc create secret generic github-credentials \
+  --from-literal=username=<github-user> \
+  --from-literal=password=<github-pat> \
+  -n rhtas-demo-ci
+```
+
 ```bash
 tkn pipeline start rhtas-hello-world \
   -n rhtas-demo-ci \
@@ -79,29 +86,19 @@ tkn pipeline start rhtas-hello-world \
   --param quay-repo=hello-world-cosign \
   --param git-url=https://github.com/navyseal8/rhtas-cosign-openshift.git \
   --param git-revision=main \
+  --param gitops-url=https://github.com/navyseal8/rhtas-cosign-openshift.git \
+  --param gitops-revision=main \
   --workspace name=shared-workspace,volumeClaimTemplateFile=openshift/workspace-pvc.yaml \
   --workspace name=docker-credentials,secret=quay-credentials \
   --workspace name=git-credentials,secret=github-credentials \
   --showlog
 ```
 
-For a **private** GitHub repo, create a secret with a PAT and bind it:
+After `build-push`, **gitops-bump** updates `newTag` / `newName` in
+`gitops/manifests/hello-world/kustomization.yaml` (and trust ConfigMap fields)
+then pushes to `gitops-revision` so Argo CD syncs the new image.
 
-```bash
-oc create secret generic github-credentials \
-  --from-literal=username=<github-user> \
-  --from-literal=password=<github-pat> \
-  -n rhtas-demo-ci
-
-tkn pipeline start rhtas-hello-world \
-  -n rhtas-demo-ci \
-  --param quay-org=acme \
-  --param git-url=https://github.com/navyseal8/rhtas-cosign-openshift.git \
-  --workspace name=shared-workspace,volumeClaimTemplateFile=openshift/workspace-pvc.yaml \
-  --workspace name=docker-credentials,secret=quay-credentials \
-  --workspace name=git-credentials,secret=github-credentials \
-  --showlog
-```
+For a **private** source repo the same `github-credentials` secret is reused on fetch-source.
 
 ### 4. Wait for Chains signature
 
@@ -138,7 +135,7 @@ cosign verify \
 | File | Description |
 |------|-------------|
 | `openshift/pipeline.yaml` | Pipeline — build, SAST, push only |
-| `openshift/tasks.yaml` | Reusable Tasks (git-clone, maven, semgrep, buildah) |
+| `openshift/tasks.yaml` | Reusable Tasks (git-clone, maven, semgrep, buildah, gitops-bump) |
 | `openshift/pipeline-sa.yaml` | Builder SA used by Chains signing identity |
 | `openshift/scc-pipelines-builder.yaml` | Bind builder SA to `pipelines-scc` (buildah) |
 | `openshift/chains-rhtas-patch.yaml` | Chains env ConfigMap (Fulcio/Rekor/TUF) |
