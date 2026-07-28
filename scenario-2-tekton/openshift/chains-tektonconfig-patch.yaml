@@ -16,9 +16,10 @@ spec:
     artifacts.taskrun.storage: oci
     artifacts.taskrun.signer: x509
     # Transparency log — point URL at RHTAS Rekor when available
-    transparency.enabled: "true"
+    transparency.enabled: true
     # Keyless via Fulcio (x509 signer), not a static cosign private key
-    signers.x509.fulcio.enabled: "true"
+    # TektonConfig expects a real bool here (not the string "true")
+    signers.x509.fulcio.enabled: true
     # Replace with your Fulcio URL after: oc get fulcio -n trusted-artifact-signer
     signers.x509.fulcio.address: "https://fulcio.trusted-artifact-signer.svc"
     # Must match Authentication.spec.serviceAccountIssuer / token iss
