@@ -123,6 +123,7 @@ cosign verify-attestation \
 | Symptom | Check |
 |---------|-------|
 | No `signed=true` after 5 min | Chains pod logs; image push result in TaskRun |
+| `no signatures found` on verify | Task must emit **both** `IMAGE_URL` and `IMAGE_DIGEST` results (Chains type-hints). Push alone is not enough. |
 | `UNAUTHORIZED` on signature push | `oc secrets link` for builder SA |
 | Fulcio error | RHTAS OIDC issuer config; Token audience |
 | Wrong identity on verify | TaskRun `serviceAccountName` |

@@ -105,8 +105,10 @@ spec:
     - name: source
     - name: dockerconfig
   results:
+    - name: IMAGE_URL
+      description: Image reference Chains uses for OCI signing (type-hint)
     - name: IMAGE_DIGEST
-      description: Digest of the built image
+      description: Digest of the built image (sha256:..., Chains type-hint)
   stepTemplate:
     env:
       - name: HOME
@@ -166,7 +168,15 @@ spec:
           -f Dockerfile .
 
         buildah push --storage-driver vfs --digestfile /tmp/digest "$(params.IMAGE)"
-        cat /tmp/digest | tee "$(results.IMAGE_DIGEST.path)"
+
+        # Chains type-hints: both IMAGE_URL and IMAGE_DIGEST are required for OCI signing.
+        # Without IMAGE_URL, the TaskRun succeeds but Chains never signs → "no signatures found".
+        DIGEST="$(tr -d '[:space:]' < /tmp/digest)"
+        if [[ -n "${DIGEST}" && "${DIGEST}" != sha256:* ]]; then
+          DIGEST="sha256:${DIGEST}"
+        fi
+        printf '%s' "$(params.IMAGE)" | tee "$(results.IMAGE_URL.path)"
+        printf '%s' "${DIGEST}" | tee "$(results.IMAGE_DIGEST.path)"
 ---
 apiVersion: tekton.dev/v1
 kind: Task
