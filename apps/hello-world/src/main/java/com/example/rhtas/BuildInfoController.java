@@ -136,16 +136,42 @@ public class BuildInfoController {
     }
 
     private String verifyCommandOc() {
-        // Run hi/cosign in-cluster so kubernetes://kubernetes.default.svc is reachable.
-        // Distroless entrypoint is cosign; args after -- are passed through.
+        // Run hi/cosign in-cluster so https://kubernetes.default.svc is reachable.
+        // Mount quay-credentials as DOCKER_CONFIG so cosign can read the private image + sigs.
+        // Do not use --rm (only valid for attached containers).
         String image = (cosignImage != null && !cosignImage.isBlank())
                 ? cosignImage
                 : "registry.access.redhat.com/hi/cosign:3.1.1";
-        return "oc run --rm --restart=Never cosign-verify \\\n"
+        String identity = verifyIdentity();
+        String issuer = verifyIssuer();
+        String target = verifyImage();
+        String overrides = "{"
+                + "\"spec\":{"
+                + "\"volumes\":[{"
+                + "\"name\":\"quay-auth\","
+                + "\"secret\":{"
+                + "\"secretName\":\"quay-credentials\","
+                + "\"items\":[{\"key\":\".dockerconfigjson\",\"path\":\"config.json\"}]"
+                + "}"
+                + "}],"
+                + "\"containers\":[{"
+                + "\"name\":\"cosign-verify\","
+                + "\"image\":\"" + image + "\","
+                + "\"env\":[{\"name\":\"DOCKER_CONFIG\",\"value\":\"/.docker\"}],"
+                + "\"volumeMounts\":[{\"name\":\"quay-auth\",\"mountPath\":\"/.docker\",\"readOnly\":true}],"
+                + "\"args\":["
+                + "\"verify\","
+                + "\"--certificate-identity=" + identity + "\","
+                + "\"--certificate-oidc-issuer=" + issuer + "\","
+                + "\"" + target + "\""
+                + "]"
+                + "}]"
+                + "}"
+                + "}";
+        return "oc delete pod cosign-verify --ignore-not-found \\\n"
+                + "  && oc run cosign-verify --restart=Never \\\n"
                 + "  --image=" + image + " \\\n"
-                + "  -- verify \\\n"
-                + "    --certificate-identity='" + verifyIdentity() + "' \\\n"
-                + "    --certificate-oidc-issuer='" + verifyIssuer() + "' \\\n"
-                + "    " + verifyImage();
+                + "  --overrides='" + overrides + "' \\\n"
+                + "  && oc logs -f pod/cosign-verify";
     }
 }

@@ -236,11 +236,17 @@
         (<a href="https://images.redhat.com/?name=cosign&amp;version=3">images.redhat.com</a>)
         so the cluster OIDC issuer is reachable:
       </p>
-      <pre th:text="${verifyCommandOc}">oc run --rm --image=registry.access.redhat.com/hi/cosign:3.1.1 -- verify ...</pre>
+      <pre th:text="${verifyCommandOc}">oc run cosign-verify --restart=Never --image=... --overrides=...</pre>
       <p class="hint">
         Matching identity + issuer proves the image was signed by the expected
-        pipeline ServiceAccount via Fulcio. Requires a kubeconfig with permission
-        to create pods in the current project.
+        pipeline ServiceAccount via Fulcio. The pod mounts the
+        <code>quay-credentials</code> dockerconfig secret as
+        <code>DOCKER_CONFIG</code> so Cosign can pull the private Quay image and
+        signature blobs (same secret used by Tekton). Create it in the current
+        namespace if needed:
+        <code>oc create secret docker-registry quay-credentials --docker-server=quay.io …</code>
+        — or make the Quay repository public. Delete the pod when finished:
+        <code>oc delete pod cosign-verify</code>.
       </p>
     </section>
   </div>
