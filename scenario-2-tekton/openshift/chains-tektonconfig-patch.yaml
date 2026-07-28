@@ -21,6 +21,7 @@ spec:
     # TektonConfig expects a real bool here (not the string "true")
     signers.x509.fulcio.enabled: true
     # Replace with your Fulcio URL after: oc get fulcio -n trusted-artifact-signer
-    signers.x509.fulcio.address: "https://fulcio.trusted-artifact-signer.svc"
+    # Use the Ready URL from the CR (OpenShift Route), not a made-up short DNS name.
+    signers.x509.fulcio.address: "https://fulcio-server-trusted-artifact-signer.apps.cluster-7s4dl.dyn.redhatworkshops.io"
     # Must match Authentication.spec.serviceAccountIssuer / token iss
     signers.x509.fulcio.issuer: "https://kubernetes.default.svc"

@@ -26,10 +26,12 @@ data:
   COSIGN_YES: "true"
   # Replace with cluster-specific values after RHTAS install:
   #   oc get fulcio,rekor,tuf -n trusted-artifact-signer
-  COSIGN_FULCIO_URL: "https://fulcio.trusted-artifact-signer.svc"
-  COSIGN_REKOR_URL: "https://rekor.trusted-artifact-signer.svc"
-  COSIGN_MIRROR: "https://tuf.trusted-artifact-signer.svc"
-  COSIGN_ROOT: "https://tuf.trusted-artifact-signer.svc/root.json"
+  # Prefer the Ready HTTPS routes from those CRs (short names like
+  # fulcio.trusted-artifact-signer.svc often do not resolve).
+  COSIGN_FULCIO_URL: "https://fulcio-server-trusted-artifact-signer.apps.cluster-7s4dl.dyn.redhatworkshops.io"
+  COSIGN_REKOR_URL: "https://rekor-server-trusted-artifact-signer.apps.cluster-7s4dl.dyn.redhatworkshops.io"
+  COSIGN_MIRROR: "https://tuf-trusted-artifact-signer.apps.cluster-7s4dl.dyn.redhatworkshops.io"
+  COSIGN_ROOT: "https://tuf-trusted-artifact-signer.apps.cluster-7s4dl.dyn.redhatworkshops.io/root.json"
   # Cluster OIDC — required for keyless SA identity
   COSIGN_OIDC_ISSUER: "https://kubernetes.default.svc"
   COSIGN_CERTIFICATE_OIDC_ISSUER: "https://kubernetes.default.svc"
