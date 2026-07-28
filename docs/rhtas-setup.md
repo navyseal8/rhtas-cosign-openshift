@@ -40,11 +40,13 @@ Under `spec.fulcio.config.OIDCIssuers`, add:
 ```yaml
 - Issuer: "<CLUSTER_OIDC_ISSUER>"
   IssuerURL: "<CLUSTER_OIDC_ISSUER>"
-  ClientID: "trusted-artifact-signer"
+  ClientID: "sigstore"
   Type: kubernetes
 ```
 
 Replace `<CLUSTER_OIDC_ISSUER>` with the value from step 2.
+
+> **ClientID:** use `sigstore`. Tekton Chains projects an SA token with `audience: sigstore`, and Fulcio requires the token `aud` to match `ClientID`. Using `trusted-artifact-signer` here will reject Chains tokens.
 
 > **Why:** Fulcio issues short-lived signing certificates bound to the OIDC identity in the token. For OpenShift ServiceAccounts, the identity is:
 >

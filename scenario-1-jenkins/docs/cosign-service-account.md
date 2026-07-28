@@ -40,7 +40,7 @@ Edit the `Securesign` CR and add the kubernetes issuer (see [rhtas-setup.md](../
 OIDCIssuers:
   - Issuer: "<CLUSTER_OIDC_ISSUER>"
     IssuerURL: "<CLUSTER_OIDC_ISSUER>"
-    ClientID: "trusted-artifact-signer"
+    ClientID: "sigstore"
     Type: kubernetes
 ```
 

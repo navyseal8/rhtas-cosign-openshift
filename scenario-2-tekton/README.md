@@ -44,6 +44,18 @@ oc patch scc pipelines-scc --type merge -p \
 
 ### 2. Configure Chains for RHTAS keyless signing
 
+Fulcio must trust the **cluster ServiceAccount issuer** (in addition to Keycloak). Without this, Chains reaches Fulcio but gets `400 There was an error processing the identity token`:
+
+```bash
+oc patch securesign securesign-sample -n trusted-artifact-signer --type=json \
+  --patch-file=openshift/fulcio-kubernetes-oidc-patch.json
+# wait until Fulcio config includes kubernetes issuer:
+oc get cm -n trusted-artifact-signer -l rhtas.redhat.com/resource=server-config \
+  -o jsonpath='{.items[-1:].data.config\.yaml}{"\n"}'
+```
+
+Then configure Chains:
+
 ```bash
 # ConfigMap only (safe to apply)
 oc apply -f openshift/chains-rhtas-patch.yaml

@@ -124,9 +124,10 @@ cosign verify-attestation \
 |---------|-------|
 | No `signed=true` after 5 min | Chains pod logs; image push result in TaskRun |
 | `no signatures found` on verify | Task must emit **both** `IMAGE_URL` and `IMAGE_DIGEST` results (Chains type-hints). Push alone is not enough. |
-| `signed: true` but still no signatures | Chains may mark reconciled even when Fulcio fails. Check controller logs for `lookup fulcio... no such host` / `No signer x509 configured`. Point `signers.x509.fulcio.address` at the Fulcio CR Ready URL (`oc get fulcio -n trusted-artifact-signer`). |
+| `signed: true` but still no signatures | Chains may mark reconciled even when Fulcio fails. Check controller logs for Fulcio errors. |
+| Fulcio `400` / `error processing the identity token` | Fulcio only trusts Keycloak (`Type: email`). Add a **kubernetes** OIDC issuer for `serviceAccountIssuer` with `ClientID: sigstore` (Chains token audience). See `openshift/fulcio-kubernetes-oidc-patch.json`. |
 | `UNAUTHORIZED` on signature push | `oc secrets link` for builder SA |
-| Fulcio error | RHTAS OIDC issuer config; Token audience; wrong Fulcio hostname |
+| Fulcio DNS / no such host | Point `signers.x509.fulcio.address` at the Fulcio CR Ready URL (`oc get fulcio -n trusted-artifact-signer`). |
 | Wrong identity on verify | TaskRun `serviceAccountName` |
 
 ## Migration from static keys to RHTAS

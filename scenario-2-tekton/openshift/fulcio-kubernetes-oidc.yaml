@@ -1,0 +1,40 @@
+# Add the OpenShift ServiceAccount issuer to Fulcio so Tekton Chains
+# (and Jenkins robot SA) can get signing certs.
+#
+# Root cause of: Fulcio 400 "There was an error processing the identity token"
+# when Chains logs "Signing with fulcio ..." — Fulcio only had Keycloak (email),
+# while Chains presents a kubernetes SA token (audience: sigstore).
+#
+# Apply (patches Securesign; operator reconciles Fulcio):
+#   oc patch securesign securesign-sample -n trusted-artifact-signer --type=json \
+#     --patch-file=fulcio-kubernetes-oidc-patch.json
+#
+# Or merge via:
+#   oc edit securesign securesign-sample -n trusted-artifact-signer
+#
+# Verify:
+#   oc get cm -n trusted-artifact-signer -l rhtas.redhat.com/resource=server-config \
+#     -o jsonpath='{.items[0].data.config\.yaml}'
+#
+---
+# JSON patch file is beside this doc as fulcio-kubernetes-oidc-patch.json
+apiVersion: rhtas.redhat.com/v1alpha1
+kind: Securesign
+metadata:
+  name: securesign-sample
+  namespace: trusted-artifact-signer
+spec:
+  fulcio:
+    config:
+      OIDCIssuers:
+        # Existing Keycloak / human identity (keep)
+        - ClientID: trusted-artifact-signer
+          Issuer: https://sso.apps.cluster-rqftp.dynamic2.redhatworkshops.io/auth/realms/trusted-artifact-signer
+          IssuerURL: https://sso.apps.cluster-rqftp.dynamic2.redhatworkshops.io/auth/realms/trusted-artifact-signer
+          Type: email
+        # Cluster SA issuer — required for Tekton Chains / robot SA signing.
+        # ClientID must be "sigstore" because Chains projects a token with audience=sigstore.
+        - ClientID: sigstore
+          Issuer: https://kubernetes.default.svc
+          IssuerURL: https://kubernetes.default.svc
+          Type: kubernetes
