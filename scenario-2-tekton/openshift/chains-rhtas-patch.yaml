@@ -1,33 +1,20 @@
-# Patch Tekton Chains to use RHTAS Fulcio/Rekor for keyless OCI signing.
+# Configure Tekton Chains for RHTAS keyless signing.
 #
-# Apply after OpenShift Pipelines is installed:
+# Do NOT "oc create" a TektonConfig — OpenShift Pipelines already owns
+# TektonConfig/config. Creating a second incomplete CR fails with:
+#   missing field(s): spec.targetNamespace
+#
+# Apply the ConfigMap, then patch the existing TektonConfig:
+#
 #   oc apply -f chains-rhtas-patch.yaml
+#   oc patch tektonconfig config --type=merge --patch-file=chains-tektonconfig-patch.yaml
 #
-# Validate field names against your Pipelines version:
-#   oc explain tektonconfig.spec.chain
+# Or patch inline (see README).
 #
-apiVersion: operator.tekton.dev/v1alpha1
-kind: TektonConfig
-metadata:
-  name: config
-  namespace: openshift-pipelines
-spec:
-  chain:
-    # OCI image signatures pushed to same registry as image
-    artifacts.oci.format: simplesigning
-    artifacts.oci.storage: oci
-    # Provenance attestations
-    artifacts.taskrun.format: in-toto
-    artifacts.taskrun.storage: oci
-  # Transparency log — RHTAS Rekor
-    transparency.enabled: "true"
-    transparency.format: intoto
-  # Keyless via Fulcio (not signing-secrets static key)
-    signers.oci.fulcio.enabled: "true"
-    signers.taskrun.fulcio.enabled: "true"
 ---
 # Supplemental ConfigMap for Chains controller environment.
-# Chains reads RHTAS endpoints from these variables at runtime.
+# Mount / inject these into the Chains deployment if your Pipelines version
+# does not pick them up from TektonConfig.chain automatically.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -38,12 +25,11 @@ metadata:
 data:
   COSIGN_YES: "true"
   # Replace with cluster-specific values after RHTAS install:
-  # oc get fulcio,rekor,tuf -n trusted-artifact-signer
+  #   oc get fulcio,rekor,tuf -n trusted-artifact-signer
   COSIGN_FULCIO_URL: "https://fulcio.trusted-artifact-signer.svc"
   COSIGN_REKOR_URL: "https://rekor.trusted-artifact-signer.svc"
   COSIGN_MIRROR: "https://tuf.trusted-artifact-signer.svc"
   COSIGN_ROOT: "https://tuf.trusted-artifact-signer.svc/root.json"
   # Cluster OIDC — required for keyless SA identity
-  # COSIGN_OIDC_ISSUER: set via oc patch or kustomize overlay per cluster
   COSIGN_OIDC_ISSUER: "https://kubernetes.default.svc"
   COSIGN_CERTIFICATE_OIDC_ISSUER: "https://kubernetes.default.svc"

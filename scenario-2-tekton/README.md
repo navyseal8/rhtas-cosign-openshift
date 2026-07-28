@@ -47,15 +47,26 @@ oc patch scc pipelines-scc --type merge -p \
 ### 2. Configure Chains for RHTAS keyless signing
 
 ```bash
+# ConfigMap only (safe to apply)
 oc apply -f openshift/chains-rhtas-patch.yaml
+
+# Patch the Operator-managed TektonConfig (do not oc create it)
+oc patch tektonconfig config --type=merge \
+  --patch-file=openshift/chains-tektonconfig-patch.yaml
 ```
 
-This patches `TektonConfig` / `chains-config` to:
+Edit Fulcio/Rekor/TUF URLs and the OIDC issuer to match your cluster:
+
+```bash
+oc get fulcio,rekor,tuf -n trusted-artifact-signer
+oc get authentication cluster -o jsonpath='{.spec.serviceAccountIssuer}{"\n"}'
+```
+
+This configures Chains to:
 
 - Store OCI signatures in the registry (`artifacts.oci.storage: oci`)
 - Enable transparency (`transparency.enabled: true`)
-- Point Fulcio/Rekor/TUF at RHTAS endpoints
-- Use **OIDC keyless signer** (ServiceAccount of the build TaskRun)
+- Use **OIDC keyless signing** via Fulcio (`signers.x509.fulcio.*`)
 
 See [docs/tekton-chains-rhtas.md](docs/tekton-chains-rhtas.md) for full explanation.
 
@@ -130,5 +141,6 @@ cosign verify \
 | `openshift/tasks.yaml` | Reusable Tasks (git-clone, maven, semgrep, buildah) |
 | `openshift/pipeline-sa.yaml` | Builder SA used by Chains signing identity |
 | `openshift/scc-pipelines-builder.yaml` | Bind builder SA to `pipelines-scc` (buildah) |
-| `openshift/chains-rhtas-patch.yaml` | Chains ↔ RHTAS configuration |
+| `openshift/chains-rhtas-patch.yaml` | Chains env ConfigMap (Fulcio/Rekor/TUF) |
+| `openshift/chains-tektonconfig-patch.yaml` | Merge-patch for TektonConfig `config` |
 | `docs/tekton-chains-rhtas.md` | Deep dive on Chains + RHTAS |

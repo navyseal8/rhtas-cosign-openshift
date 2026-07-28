@@ -25,7 +25,18 @@ For RHTAS we use **keyless signing** with Fulcio — same trust model as Jenkins
 
 ### TektonConfig patch (summary)
 
-File: `openshift/chains-rhtas-patch.yaml`
+Files:
+
+- `openshift/chains-rhtas-patch.yaml` — ConfigMap with Cosign/RHTAS env
+- `openshift/chains-tektonconfig-patch.yaml` — merge-patch for existing `TektonConfig/config`
+
+```bash
+oc apply -f openshift/chains-rhtas-patch.yaml
+oc patch tektonconfig config --type=merge \
+  --patch-file=openshift/chains-tektonconfig-patch.yaml
+```
+
+Do **not** `oc create` a new `TektonConfig` — the Operator already manages `config`, and a partial create fails with `missing field(s): spec.targetNamespace`.
 
 Key settings:
 
@@ -121,6 +132,6 @@ cosign verify-attestation \
 If `signing-secrets` already exists from a prior lab:
 
 1. Back up existing keys
-2. Apply `chains-rhtas-patch.yaml`
-3. Remove `artifacts.oci.signer: x509` key-based config
+2. Apply `chains-rhtas-patch.yaml` and patch `TektonConfig` with `chains-tektonconfig-patch.yaml`
+3. Remove `artifacts.oci.signer: x509` key-based config if switching from static keys
 4. Restart Chains deployment in `openshift-pipelines`

@@ -1,0 +1,25 @@
+# Merge-patch for the existing TektonConfig named "config".
+# Apply with:
+#   oc patch tektonconfig config --type=merge --patch-file=chains-tektonconfig-patch.yaml
+#
+# Validate keys for your version:
+#   oc explain tektonconfig.spec.chain
+#
+spec:
+  chain:
+    # OCI image signatures stored next to the image in the registry
+    artifacts.oci.format: simplesigning
+    artifacts.oci.storage: oci
+    artifacts.oci.signer: x509
+    # Provenance attestations
+    artifacts.taskrun.format: in-toto
+    artifacts.taskrun.storage: oci
+    artifacts.taskrun.signer: x509
+    # Transparency log — point URL at RHTAS Rekor when available
+    transparency.enabled: "true"
+    # Keyless via Fulcio (x509 signer), not a static cosign private key
+    signers.x509.fulcio.enabled: "true"
+    # Replace with your Fulcio URL after: oc get fulcio -n trusted-artifact-signer
+    signers.x509.fulcio.address: "https://fulcio.trusted-artifact-signer.svc"
+    # Must match Authentication.spec.serviceAccountIssuer / token iss
+    signers.x509.fulcio.issuer: "https://kubernetes.default.svc"
