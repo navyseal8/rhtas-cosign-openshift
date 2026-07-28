@@ -18,3 +18,5 @@ data:
   GIT_COMMIT: "unknown"
   BUILDER_IMAGE: "registry.access.redhat.com/ubi9/openjdk-21:1.21"
   RUNTIME_IMAGE: "registry.access.redhat.com/hi/openjdk:21.0.11-runtime"
+  TUF_URL: "https://tuf.trusted-artifact-signer.svc"
+  COSIGN_IMAGE: "registry.redhat.io/rhtas/cosign-rhel9"

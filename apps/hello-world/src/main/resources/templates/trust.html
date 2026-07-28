@@ -227,11 +227,19 @@
 
     <section class="panel wide">
       <h2>Re-verify this image</h2>
+      <p class="hint" style="margin-top:0">
+        Local cosign (workstation already initialized against your RHTAS TUF root):
+      </p>
       <pre th:text="${verifyCommand}">cosign verify ...</pre>
       <p class="hint">
-        Run this from a workstation initialized against your RHTAS TUF root.
+        Or via the RHTAS Cosign container image (initializes TUF inside the container):
+      </p>
+      <pre th:text="${verifyCommandPodman}">podman run ... cosign verify ...</pre>
+      <p class="hint">
         Matching identity + issuer proves the image was signed by the expected
-        pipeline ServiceAccount via Fulcio.
+        pipeline ServiceAccount via Fulcio. Use a reachable TUF URL (cluster route
+        or in-cluster service) for the Podman form; <code>podman login registry.redhat.io</code>
+        may be required to pull the Cosign image.
       </p>
     </section>
   </div>

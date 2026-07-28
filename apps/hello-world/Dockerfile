@@ -33,6 +33,8 @@ ARG IMAGE_REF=unknown
 ARG GIT_COMMIT=unknown
 ARG BUILDER_IMAGE=registry.access.redhat.com/ubi9/openjdk-21:1.21
 ARG RUNTIME_IMAGE=registry.access.redhat.com/hi/openjdk:21.0.11-runtime
+ARG TUF_URL=unknown
+ARG COSIGN_IMAGE=registry.redhat.io/rhtas/cosign-rhel9
 
 ENV BUILD_VERSION=${BUILD_VERSION} \
     IMAGE_DIGEST=${IMAGE_DIGEST} \
@@ -45,7 +47,9 @@ ENV BUILD_VERSION=${BUILD_VERSION} \
     IMAGE_REF=${IMAGE_REF} \
     GIT_COMMIT=${GIT_COMMIT} \
     BUILDER_IMAGE=${BUILDER_IMAGE} \
-    RUNTIME_IMAGE=${RUNTIME_IMAGE}
+    RUNTIME_IMAGE=${RUNTIME_IMAGE} \
+    TUF_URL=${TUF_URL} \
+    COSIGN_IMAGE=${COSIGN_IMAGE}
 
 WORKDIR /app
 COPY --from=builder /app/app.jar /app/app.jar

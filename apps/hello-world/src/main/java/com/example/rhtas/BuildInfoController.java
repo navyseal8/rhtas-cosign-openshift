@@ -47,6 +47,12 @@ public class BuildInfoController {
     @Value("${app.runtime.image:unknown}")
     private String runtimeImage;
 
+    @Value("${app.tuf.url:unknown}")
+    private String tufUrl;
+
+    @Value("${app.cosign.image:registry.redhat.io/rhtas/cosign-rhel9}")
+    private String cosignImage;
+
     @GetMapping("/")
     public String page(Model model) {
         boolean signed = isSigned(signerIdentity);
@@ -63,9 +69,12 @@ public class BuildInfoController {
         model.addAttribute("gitCommit", gitCommit);
         model.addAttribute("builderImage", builderImage);
         model.addAttribute("runtimeImage", runtimeImage);
+        model.addAttribute("tufUrl", tufUrl);
+        model.addAttribute("cosignImage", cosignImage);
         model.addAttribute("signed", signed);
         model.addAttribute("statusLabel", signed ? "Keyless signature present" : "Unsigned / not yet signed");
         model.addAttribute("verifyCommand", verifyCommand());
+        model.addAttribute("verifyCommandPodman", verifyCommandPodman());
         return "trust";
     }
 
@@ -86,8 +95,11 @@ public class BuildInfoController {
         body.put("gitCommit", gitCommit);
         body.put("builderImage", builderImage);
         body.put("runtimeImage", runtimeImage);
+        body.put("tufUrl", tufUrl);
+        body.put("cosignImage", cosignImage);
         body.put("signed", isSigned(signerIdentity));
         body.put("verifyCommand", verifyCommand());
+        body.put("verifyCommandPodman", verifyCommandPodman());
         return body;
     }
 
@@ -98,17 +110,52 @@ public class BuildInfoController {
                 && !"unknown".equalsIgnoreCase(identity);
     }
 
+    private String verifyImage() {
+        if (imageRef != null && !imageRef.isBlank() && !"unknown".equals(imageRef)) {
+            return imageRef;
+        }
+        return "<image-ref>";
+    }
+
+    private String verifyIdentity() {
+        return isSigned(signerIdentity) ? signerIdentity : "<certificate-identity>";
+    }
+
+    private String verifyIssuer() {
+        if (oidcIssuer != null && !oidcIssuer.isBlank() && !"unknown".equals(oidcIssuer)) {
+            return oidcIssuer;
+        }
+        return "<oidc-issuer>";
+    }
+
+    private String verifyTuf() {
+        if (tufUrl != null && !tufUrl.isBlank() && !"unknown".equals(tufUrl)) {
+            return tufUrl;
+        }
+        return "<tuf-url>";
+    }
+
     private String verifyCommand() {
-        String image = (imageRef != null && !imageRef.isBlank() && !"unknown".equals(imageRef))
-                ? imageRef
-                : "<image-ref>";
-        String identity = isSigned(signerIdentity) ? signerIdentity : "<certificate-identity>";
-        String issuer = (oidcIssuer != null && !oidcIssuer.isBlank() && !"unknown".equals(oidcIssuer))
-                ? oidcIssuer
-                : "<oidc-issuer>";
         return "cosign verify \\\n"
-                + "  --certificate-identity='" + identity + "' \\\n"
-                + "  --certificate-oidc-issuer='" + issuer + "' \\\n"
-                + "  " + image;
+                + "  --certificate-identity='" + verifyIdentity() + "' \\\n"
+                + "  --certificate-oidc-issuer='" + verifyIssuer() + "' \\\n"
+                + "  " + verifyImage();
+    }
+
+    private String verifyCommandPodman() {
+        String tuf = verifyTuf();
+        String image = (cosignImage != null && !cosignImage.isBlank())
+                ? cosignImage
+                : "registry.redhat.io/rhtas/cosign-rhel9";
+        return "podman run --rm -it \\\n"
+                + "  -e COSIGN_YES=true \\\n"
+                + "  " + image + " \\\n"
+                + "  sh -c \"\n"
+                + "    cosign initialize --mirror '" + tuf + "' --root '" + tuf + "/root.json' &&\n"
+                + "    cosign verify \\\n"
+                + "      --certificate-identity='" + verifyIdentity() + "' \\\n"
+                + "      --certificate-oidc-issuer='" + verifyIssuer() + "' \\\n"
+                + "      " + verifyImage() + "\n"
+                + "  \"";
     }
 }
