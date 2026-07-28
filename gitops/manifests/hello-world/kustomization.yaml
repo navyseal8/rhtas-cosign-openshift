@@ -5,6 +5,7 @@ namespace: rhtas-demo-dev
 
 resources:
   - namespace.yaml
+  - trust-configmap.yaml
   - deployment.yaml
   - service.yaml
   - route.yaml

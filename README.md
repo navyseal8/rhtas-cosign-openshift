@@ -10,24 +10,15 @@ Three end-to-end scenarios that prove [Red Hat Trusted Artifact Signer (RHTAS)](
 
 ## Sample application
 
-All scenarios build and deploy the same [Java hello-world app](apps/hello-world/) that reports:
+All scenarios build and deploy the same [Java hello-world app](apps/hello-world/) that serves an HTML **trust report** (and JSON at `/api/info`) with:
 
 - **Build version** — Jenkins build number, PipelineRun name, or Git commit
+- **Image digest & reference** — the artifact that cosign signed
 - **Signer identity** — Fulcio certificate identity from the cosign signature
-- **Signature digest** — image digest at signing time
+- **Fulcio / Rekor / OIDC issuer** — RHTAS trust-service endpoints used for keyless signing
+- **Copy-paste `cosign verify`** — so the audience can re-check the image live
 
-Runtime output example:
-
-```json
-{
-  "message": "Hello from RHTAS demo",
-  "buildVersion": "jenkins-42",
-  "imageDigest": "sha256:abc123…",
-  "signerIdentity": "https://kubernetes.io/namespaces/rhtas-demo-ci/serviceaccounts/rhtas-signer",
-  "signedAt": "2026-06-05T10:15:00Z"
-}
-```
-
+The image is a **multistage** build on Red Hat UBI OpenJDK images ([builder](https://catalog.redhat.com/en/software/containers/ubi9/openjdk-21), [runtime](https://catalog.redhat.com/en/software/containers/ubi9/openjdk-21-runtime)): compile in the JDK stage, run on the JRE-only runtime.
 ## Repository layout
 
 ```

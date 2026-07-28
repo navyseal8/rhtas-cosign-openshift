@@ -14,15 +14,13 @@ spec:
     spec:
       containers:
         - name: hello-world
-          image: quay.io/rhn_support_jeretan/hello-world-cosign:tekton-3c877f5f-2381-447d-b938-f93cdf4e9f9d
+          image: quay.io/acme/rhtas-hello-world:placeholder-0
           ports:
             - containerPort: 8080
               name: http
-          env:
-            - name: BUILD_VERSION
-              valueFrom:
-                fieldRef:
-                  fieldPath: metadata.labels['app.kubernetes.io/version']
+          envFrom:
+            - configMapRef:
+                name: hello-world-trust
           readinessProbe:
             httpGet:
               path: /actuator/health
@@ -42,3 +40,15 @@ spec:
             limits:
               cpu: 500m
               memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}

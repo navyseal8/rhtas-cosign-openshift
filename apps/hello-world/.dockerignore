@@ -1,9 +1,5 @@
 .git/
 .idea/
 *.iml
-# Do NOT ignore target/ — Dockerfile copies the pre-built jar from CI (mvn package)
-target/classes/
-target/generated-sources/
-target/maven-*/
-target/surefire-reports/
-target/test-classes/
+# Multistage Dockerfile rebuilds with Maven — do not send local target/
+target/

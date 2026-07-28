@@ -70,7 +70,10 @@ curl -s "https://$(oc get route hello-world -n rhtas-demo-dev -o jsonpath='{.spe
 
 ## What CI changes
 
-Pipelines update only this file:
+Pipelines update:
+
+1. Image tag in `kustomization.yaml`
+2. Trust fields in `trust-configmap.yaml` (digest, signer identity, Fulcio/Rekor URLs, OIDC issuer) so the HTML trust page matches the signed artifact
 
 ```yaml
 # gitops/manifests/hello-world/kustomization.yaml
