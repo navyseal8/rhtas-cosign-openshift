@@ -12,6 +12,8 @@ spec:
     repoURL: https://github.com/navyseal8/rhtas-cosign-openshift.git
     targetRevision: main
     path: gitops/manifests/hello-world
+    directory:
+      recurse: true
   destination:
     server: https://kubernetes.default.svc
     namespace: rhtas-demo-dev
