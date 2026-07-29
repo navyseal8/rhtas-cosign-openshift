@@ -75,7 +75,9 @@ To enforce signed images at deploy time, configure OpenShift admission or a poli
 - **OIDC issuer:** cluster `serviceAccountIssuer` or SPIFFE OIDC discovery URL (Scenario 3)
 - **Certificate identity:** regex matching your signer ServiceAccounts or SPIFFE IDs
 
-Example verify command:
+Example verify command (after `cosign initialize` against the RHTAS TUF URL). Cosign 3
+also needs RHTAS Fulcio/Rekor/CT keys — see
+[scenario-2 Tekton verify](../scenario-2-tekton/docs/tekton-chains-rhtas.md#verify-image-cosign-3--rhtas):
 
 ```bash
 cosign verify \

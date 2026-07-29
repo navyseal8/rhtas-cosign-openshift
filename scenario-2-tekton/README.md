@@ -16,7 +16,8 @@ PipelineRun → maven build → SAST → buildah push → version-bump (commit n
                     ↓                        ↓
          Tekton Chains (async)         Argo CD syncs rhtas-demo-dev
                     ↓
-    cosign sign + Rekor entry (identity = TaskRun ServiceAccount)
+    Fulcio keyless sign + RHTAS Rekor
+    (cert identity = tekton-chains-controller SA)
 ```
 
 ## Setup
@@ -91,6 +92,17 @@ oc create secret generic github-credentials \
   -n rhtas-demo-ci
 ```
 
+Link Quay credentials to the SA the PipelineRun will use. Console / default `tkn`
+starts usually set `taskRunTemplate.serviceAccountName: pipeline`. Chains uses
+**that** SA for Quay (not the workspace mount Buildah uses):
+
+```bash
+# Match the secret name you pass as docker-credentials below
+oc secrets link pipeline quay-credentials \
+  -n rhtas-demo-ci --for=pull,mount
+# or: oc secrets link pipeline <your-quay-dockerconfig-secret> ...
+```
+
 ```bash
 tkn pipeline start rhtas-hello-world \
   -n rhtas-demo-ci \
@@ -115,31 +127,88 @@ For a **private** source repo the same `github-credentials` secret is reused on 
 ### 4. Wait for Chains signature
 
 ```bash
-TASKRUN=$(tkn pipelinerun describe <run-name> -n rhtas-demo-ci -o jsonpath='{.status.childReferences[?(@.kind=="TaskRun")].name}' | head -1)
-
-# Poll until signed
-oc get taskrun "$TASKRUN" -n rhtas-demo-ci \
-  -o jsonpath='{.metadata.annotations.chains\.tekton\.dev/signed}{"\n"}'
+oc get taskrun -n rhtas-demo-ci -l tekton.dev/pipelineTask=build-push \
+  --sort-by=.metadata.creationTimestamp \
+  -o go-template='{{range .items}}{{.metadata.name}} signed={{index .metadata.annotations "chains.tekton.dev/signed"}} transparency={{index .metadata.annotations "chains.tekton.dev/transparency"}}{{"\n"}}{{end}}' | tail -3
 ```
 
-### 5. Verify
+Expect `signed=true` and a transparency URL on your **RHTAS** Rekor (not `rekor.sigstore.dev`).
+
+If you see `UNAUTHORIZED` / `signed=failed`, the TaskRun SA is missing the Quay
+dockerconfig — see [docs/tekton-chains-rhtas.md](docs/tekton-chains-rhtas.md).
+
+### 5. Verify (Cosign 3 + RHTAS trust)
+
+Public Sigstore roots will fail against RHTAS. Initialize TUF once, create a trust
+ConfigMap, then verify in-cluster:
 
 ```bash
-export ISSUER=$(oc get authentication cluster -o jsonpath='{.spec.serviceAccountIssuer}')
+NS=rhtas-demo-ci
+export TUF_URL=$(oc get tuf -n trusted-artifact-signer -o jsonpath='{.items[0].status.url}')
+cosign initialize --mirror "$TUF_URL" --root "$TUF_URL/root.json"
 
-cosign verify \
-  --certificate-identity-regexp='^https://kubernetes.io/namespaces/openshift-pipelines/serviceaccounts/tekton-chains-controller$' \
-  --certificate-oidc-issuer="$ISSUER" \
-  quay.io/acme/rhtas-hello-world:tekton-<run-id>
+oc create configmap rhtas-trust -n "$NS" \
+  --from-file=fulcio_v1.crt.pem="$HOME/.sigstore/root/targets/fulcio_v1.crt.pem" \
+  --from-file=rekor.pub="$HOME/.sigstore/root/targets/rekor.pub" \
+  --from-file=ctfe.pub="$HOME/.sigstore/root/targets/ctfe.pub" \
+  --from-file=trusted_root.json="$HOME/.sigstore/root/targets/trusted_root.json" \
+  --dry-run=client -o yaml | oc apply -f -
+
+REKOR=$(oc get cm chains-config -n openshift-pipelines -o jsonpath='{.data.transparency\.url}')
+# Prefer digest from the signed TaskRun:
+IMAGE=quay.io/rhn_support_jeretan/hello-world-cosign@sha256:<IMAGE_DIGEST>
+
+oc delete pod cosign-verify -n "$NS" --ignore-not-found
+oc run cosign-verify -n "$NS" --restart=Never \
+  --image=registry.access.redhat.com/hi/cosign:3.1.1 \
+  --overrides="{
+    \"spec\":{
+      \"volumes\":[
+        {\"name\":\"quay-auth\",\"secret\":{\"secretName\":\"quay-credentials\",\"items\":[{\"key\":\".dockerconfigjson\",\"path\":\"config.json\"}]}},
+        {\"name\":\"trust\",\"configMap\":{\"name\":\"rhtas-trust\"}}
+      ],
+      \"containers\":[{
+        \"name\":\"cosign-verify\",
+        \"image\":\"registry.access.redhat.com/hi/cosign:3.1.1\",
+        \"env\":[
+          {\"name\":\"DOCKER_CONFIG\",\"value\":\"/.docker\"},
+          {\"name\":\"SIGSTORE_ROOT_FILE\",\"value\":\"/var/run/trust/fulcio_v1.crt.pem\"},
+          {\"name\":\"SIGSTORE_REKOR_PUBLIC_KEY\",\"value\":\"/var/run/trust/rekor.pub\"},
+          {\"name\":\"SIGSTORE_CT_LOG_PUBLIC_KEY_FILE\",\"value\":\"/var/run/trust/ctfe.pub\"}
+        ],
+        \"volumeMounts\":[
+          {\"name\":\"quay-auth\",\"mountPath\":\"/.docker\",\"readOnly\":true},
+          {\"name\":\"trust\",\"mountPath\":\"/var/run/trust\",\"readOnly\":true}
+        ],
+        \"args\":[
+          \"verify\",
+          \"--rekor-url=${REKOR}\",
+          \"--certificate-identity=https://kubernetes.io/namespaces/openshift-pipelines/serviceaccounts/tekton-chains-controller\",
+          \"--certificate-oidc-issuer=https://kubernetes.default.svc\",
+          \"${IMAGE}\"
+        ]
+      }]
+    }
+  }"
+
+for i in $(seq 1 40); do
+  ph=$(oc get pod cosign-verify -n "$NS" -o jsonpath='{.status.phase}')
+  [[ "$ph" == "Succeeded" || "$ph" == "Failed" ]] && break
+  sleep 2
+done
+oc logs -n "$NS" pod/cosign-verify
 ```
+
+Common Cosign errors and the env vars that fix them are tabulated in
+[docs/tekton-chains-rhtas.md](docs/tekton-chains-rhtas.md#troubleshooting).
 
 ## Key difference from Scenario 1
 
 | | Jenkins (S1) | Tekton Chains (S2) |
 |---|--------------|-------------------|
 | cosign in pipeline | Yes — explicit stage | **No** |
-| Signer identity | `rhtas-signer` SA | `tekton-chains-builder` SA |
-| Failure mode | Pipeline fails at sign stage | TaskRun succeeds; check Chains annotation |
+| Signer identity (Fulcio Subject) | `rhtas-signer` SA | `tekton-chains-controller` SA |
+| Failure mode | Pipeline fails at sign stage | TaskRun succeeds; check `chains.tekton.dev/signed` |
 | Provenance | Optional | Chains generates `in-toto` attestation |
 
 ## Files

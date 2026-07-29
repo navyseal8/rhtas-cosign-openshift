@@ -64,19 +64,20 @@ GitOps watches the image tag in `gitops/manifests/hello-world/kustomization.yaml
 
 ## Verification (all scenarios)
 
-After deploy, verify the signature against RHTAS trust root:
+After deploy, verify against the **RHTAS** trust root (not public Sigstore). Initialize TUF once:
 
 ```bash
 export TUF_URL=$(oc get tuf -n trusted-artifact-signer -o jsonpath='{.items[0].status.url}')
-export COSIGN_CERTIFICATE_OIDC_ISSUER=$(oc get authentication cluster -o jsonpath='{.spec.serviceAccountIssuer}')
-
 cosign initialize --mirror "$TUF_URL" --root "$TUF_URL/root.json"
-
-cosign verify \
-  --certificate-identity-regexp='^https://kubernetes.io/namespaces/.*/serviceaccounts/.*$' \
-  --certificate-oidc-issuer="$COSIGN_CERTIFICATE_OIDC_ISSUER" \
-  quay.io/<org>/rhtas-hello-world:<tag>
 ```
+
+For Cosign 3 / in-cluster verify you typically also need RHTAS Fulcio CA, Rekor, and CT log keys
+(`SIGSTORE_ROOT_FILE`, `SIGSTORE_REKOR_PUBLIC_KEY`, `SIGSTORE_CT_LOG_PUBLIC_KEY_FILE`) plus
+`--rekor-url` pointing at your RHTAS Rekor. Certificate identity depends on the scenario
+(e.g. Scenario 2: `tekton-chains-controller`, issuer often `https://kubernetes.default.svc`).
+
+Full copy-paste (including hardened `hi/cosign` pod) is in
+[scenario-2-tekton/docs/tekton-chains-rhtas.md](scenario-2-tekton/docs/tekton-chains-rhtas.md#verify-image-cosign-3--rhtas).
 
 ## References
 
