@@ -14,7 +14,7 @@ resources:
 images:
   - name: quay.io/rhn_support_jeretan/hello-world-cosign
     newName: quay.io/rhn_support_jeretan/hello-world-cosign
-    newTag: tekton-c7e50fc2-fa98-4a6a-9061-4e09114848c2
+    newTag: tekton-5a8607e4-0851-402f-903e-cf4e3cfa75bb
 
 # Modern Kustomize: `labels` is a list of transformers (not a map).
 # includeSelectors: false — do not mutate Deployment/Service selectors (immutable).
