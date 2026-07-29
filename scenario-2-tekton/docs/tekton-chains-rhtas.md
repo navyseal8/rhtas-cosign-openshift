@@ -63,15 +63,21 @@ COSIGN_OIDC_ISSUER: <cluster serviceAccountIssuer>
 
 ## ServiceAccount for signing identity
 
-The build TaskRun uses `tekton-chains-builder` in `rhtas-demo-ci`. Chains uses **this SA's OIDC token** when calling Fulcio.
+The build TaskRun uses `tekton-chains-builder` in `rhtas-demo-ci` for **build/push**
+registry credentials. The Chains **controller** signs with its own projected SA token
+(`openshift-pipelines/tekton-chains-controller`, audience `sigstore`).
 
 Fulcio certificate identity after signing:
 
 ```
-https://kubernetes.io/namespaces/rhtas-demo-ci/serviceaccounts/tekton-chains-builder
+https://kubernetes.io/namespaces/openshift-pipelines/serviceaccounts/tekton-chains-controller
 ```
 
-Ensure Fulcio trusts the cluster `serviceAccountIssuer` (same as Scenario 1).
+(If you later configure Chains to mint tokens as the TaskRun SA, the identity would be
+`…/rhtas-demo-ci/serviceaccounts/tekton-chains-builder` instead.)
+
+Ensure Fulcio trusts the cluster `serviceAccountIssuer` with `Type: kubernetes` and
+`ClientID: sigstore` (see `fulcio-kubernetes-oidc-patch.json`).
 
 ## Registry authentication
 
@@ -107,12 +113,12 @@ export ISSUER=$(oc get authentication cluster -o jsonpath='{.spec.serviceAccount
 export IMAGE=quay.io/acme/rhtas-hello-world:tekton-abc12
 
 cosign verify \
-  --certificate-identity-regexp='^https://kubernetes.io/namespaces/rhtas-demo-ci/serviceaccounts/tekton-chains-builder$' \
+  --certificate-identity-regexp='^https://kubernetes.io/namespaces/openshift-pipelines/serviceaccounts/tekton-chains-controller$' \
   --certificate-oidc-issuer="$ISSUER" \
   "$IMAGE"
 
 cosign verify-attestation \
-  --certificate-identity-regexp='^https://kubernetes.io/namespaces/rhtas-demo-ci/serviceaccounts/tekton-chains-builder$' \
+  --certificate-identity-regexp='^https://kubernetes.io/namespaces/openshift-pipelines/serviceaccounts/tekton-chains-controller$' \
   --certificate-oidc-issuer="$ISSUER" \
   --type slsaprovenance \
   "$IMAGE"
@@ -126,6 +132,8 @@ cosign verify-attestation \
 | `no signatures found` on verify | Task must emit **both** `IMAGE_URL` and `IMAGE_DIGEST` results (Chains type-hints). Push alone is not enough. |
 | `signed: true` but still no signatures | Chains may mark reconciled even when Fulcio fails. Check controller logs for Fulcio errors. |
 | Fulcio `400` / `error processing the identity token` | Fulcio only trusts Keycloak (`Type: email`). Add a **kubernetes** OIDC issuer for `serviceAccountIssuer` with `ClientID: sigstore` (Chains token audience). See `openshift/fulcio-kubernetes-oidc-patch.json`. |
+| `signed=failed` + transparency URL on `rekor.sigstore.dev` | Set `transparency.url` to your RHTAS Rekor Ready URL in TektonConfig. The supplemental `chains-rhtas-env` ConfigMap is **not** mounted into the controller. |
+| Verify identity mismatch | Chains signs as `openshift-pipelines/tekton-chains-controller`, not the build TaskRun SA. |
 | `UNAUTHORIZED` on signature push | `oc secrets link` for builder SA |
 | Fulcio DNS / no such host | Point `signers.x509.fulcio.address` at the Fulcio CR Ready URL (`oc get fulcio -n trusted-artifact-signer`). |
 | Wrong identity on verify | TaskRun `serviceAccountName` |

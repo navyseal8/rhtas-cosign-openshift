@@ -10,7 +10,7 @@ data:
   BUILD_VERSION: "tekton-rhtas-hello-world-run-tgsn7"
   IMAGE_REF: "quay.io/rhn_support_jeretan/hello-world-cosign:tekton-1e9b1c2e-d281-4475-8a44-c56a18b05e45"
   IMAGE_DIGEST: "sha256:a0d7b0c9bc095e42492d85a3172789cfbf922947bd28438da04d779b86a7a598"
-  SIGNER_IDENTITY: "https://kubernetes.io/namespaces/rhtas-demo-ci/serviceaccounts/tekton-chains-builder"
+  SIGNER_IDENTITY: "https://kubernetes.io/namespaces/openshift-pipelines/serviceaccounts/tekton-chains-controller"
   SIGNED_AT: "2026-07-28T15:24:00Z"
   FULCIO_URL: "https://fulcio-server-trusted-artifact-signer.apps.cluster-7s4dl.dyn.redhatworkshops.io"
   REKOR_URL: "https://rekor-server-trusted-artifact-signer.apps.cluster-7s4dl.dyn.redhatworkshops.io"

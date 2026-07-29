@@ -128,7 +128,7 @@ oc get taskrun "$TASKRUN" -n rhtas-demo-ci \
 export ISSUER=$(oc get authentication cluster -o jsonpath='{.spec.serviceAccountIssuer}')
 
 cosign verify \
-  --certificate-identity-regexp='^https://kubernetes.io/namespaces/rhtas-demo-ci/serviceaccounts/tekton-chains-builder$' \
+  --certificate-identity-regexp='^https://kubernetes.io/namespaces/openshift-pipelines/serviceaccounts/tekton-chains-controller$' \
   --certificate-oidc-issuer="$ISSUER" \
   quay.io/acme/rhtas-hello-world:tekton-<run-id>
 ```

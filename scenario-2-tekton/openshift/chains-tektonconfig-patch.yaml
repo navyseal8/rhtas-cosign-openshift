@@ -15,8 +15,11 @@ spec:
     artifacts.taskrun.format: in-toto
     artifacts.taskrun.storage: oci
     artifacts.taskrun.signer: x509
-    # Transparency log — point URL at RHTAS Rekor when available
+    # Transparency log — MUST be your RHTAS Rekor, or Chains defaults to
+    # https://rekor.sigstore.dev and verify against RHTAS TUF will fail.
+    # (chains-rhtas-env ConfigMap is NOT mounted into the controller.)
     transparency.enabled: true
+    transparency.url: "https://rekor-server-trusted-artifact-signer.apps.cluster-7s4dl.dyn.redhatworkshops.io"
     # Keyless via Fulcio (x509 signer), not a static cosign private key
     # TektonConfig expects a real bool here (not the string "true")
     signers.x509.fulcio.enabled: true
