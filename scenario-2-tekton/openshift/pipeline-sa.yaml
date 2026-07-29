@@ -5,5 +5,9 @@ metadata:
   namespace: rhtas-demo-ci
   labels:
     app.kubernetes.io/component: tekton-builder
+# Chains reads dockerconfig from SA secrets when uploading OCI signatures.
+# Buildah also uses the PipelineRun docker-credentials workspace (same Secret).
+secrets:
+  - name: quay-credentials
 imagePullSecrets:
   - name: quay-credentials

@@ -81,13 +81,43 @@ Ensure Fulcio trusts the cluster `serviceAccountIssuer` with `Type: kubernetes` 
 
 ## Registry authentication
 
-Chains pushes signatures using credentials from the TaskRun's ServiceAccount:
+Chains uploads OCI signatures by authenticating to Quay as the **TaskRun** ServiceAccount
+(`tekton-chains-builder`). Buildah push working is not enough — Chains reads the SA’s
+`kubernetes.io/dockerconfigjson` secret via the API.
 
 ```bash
-oc secrets link tekton-chains-builder quay-credentials --for=pull,mount
+# Ensure the secret exists and is linked for both pull + mount
+oc get secret quay-credentials -n rhtas-demo-ci -o jsonpath='{.type}{"\n"}'
+oc secrets link tekton-chains-builder quay-credentials -n rhtas-demo-ci --for=pull,mount
+
+# If Chains still logs UNAUTHORIZED on quay.io, also give the controller SA a copy:
+oc get secret quay-credentials -n rhtas-demo-ci -o yaml \
+  | sed 's/namespace: rhtas-demo-ci/namespace: openshift-pipelines/' \
+  | grep -v 'resourceVersion\|uid\|creationTimestamp\|ownerReferences' \
+  | oc apply -f -
+oc secrets link tekton-chains-controller quay-credentials -n openshift-pipelines --for=pull,mount
+oc rollout restart deploy/tekton-chains-controller -n openshift-pipelines
 ```
 
-The `build-push` task mounts `$(workspaces.dockerconfig.path)` for image push; Chains reuses the same credentials for signature blobs.
+Typical failure in controller logs:
+
+```text
+getting signed image: GET https://quay.io/v2/.../manifests/sha256:...: UNAUTHORIZED
+```
+
+Until that is fixed, `chains.tekton.dev/signed=failed` and Cosign reports **no signatures found**.
+
+## Transparency log (RHTAS Rekor)
+
+`transparency.enabled: true` without `transparency.url` defaults to **public**
+`https://rekor.sigstore.dev`. The supplemental `chains-rhtas-env` ConfigMap is **not**
+mounted into the controller — set Rekor on TektonConfig:
+
+```bash
+oc patch tektonconfig config --type=merge --patch-file=openshift/chains-tektonconfig-patch.yaml
+oc get cm chains-config -n openshift-pipelines -o yaml | grep transparency
+# must show transparency.url pointing at your RHTAS Rekor route
+```
 
 ## Observing Chains
 
@@ -133,6 +163,7 @@ cosign verify-attestation \
 | `signed: true` but still no signatures | Chains may mark reconciled even when Fulcio fails. Check controller logs for Fulcio errors. |
 | Fulcio `400` / `error processing the identity token` | Fulcio only trusts Keycloak (`Type: email`). Add a **kubernetes** OIDC issuer for `serviceAccountIssuer` with `ClientID: sigstore` (Chains token audience). See `openshift/fulcio-kubernetes-oidc-patch.json`. |
 | `signed=failed` + transparency URL on `rekor.sigstore.dev` | Set `transparency.url` to your RHTAS Rekor Ready URL in TektonConfig. The supplemental `chains-rhtas-env` ConfigMap is **not** mounted into the controller. |
+| `getting signed image: ... UNAUTHORIZED` on quay.io | Chains cannot read/push the private image. Link `quay-credentials` to `tekton-chains-builder` (and optionally copy+link to `tekton-chains-controller` in `openshift-pipelines`). |
 | Verify identity mismatch | Chains signs as `openshift-pipelines/tekton-chains-controller`, not the build TaskRun SA. |
 | `UNAUTHORIZED` on signature push | `oc secrets link` for builder SA |
 | Fulcio DNS / no such host | Point `signers.x509.fulcio.address` at the Fulcio CR Ready URL (`oc get fulcio -n trusted-artifact-signer`). |
