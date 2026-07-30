@@ -11,21 +11,103 @@ Demonstrates **Zero Trust Workload Identity Manager** (SPIFFE/SPIRE) issuing sho
 
 ## Architecture
 
+Based on the [Zero Trust Workload Identity Manager](https://docs.redhat.com/en/documentation/openshift_container_platform/4.20/html/security_and_compliance/zero-trust-workload-identity-manager) (OCP 4.20) overview: the Operator manages the SPIFFE Runtime Environment (SPIRE), which issues short-lived **SVIDs** (X.509 or JWT) to attested workloads.
+
+### What each component does
+
+| Component | CR (name `cluster`) | Role |
+|-----------|---------------------|------|
+| **SPIFFE** | — (standard) | Framework that assigns unique IDs (`spiffe://…`) carried in SVIDs |
+| **SPIRE Server** | `SpireServer` | Trust-domain CA: issues identities, holds registration entries & signing keys |
+| **SPIRE Agent** | `SpireAgent` | DaemonSet per node: node + workload attestation; serves the Workload API |
+| **SPIFFE CSI Driver** | `SpiffeCSIDriver` | Mounts the Workload API socket into pods (ephemeral CSI volume) |
+| **SPIRE OIDC Discovery Provider** | `SpireOIDCDiscoveryProvider` | Exposes OIDC endpoints so JWT-SVIDs work with Fulcio / other OIDC clients |
+| **SPIRE Controller Manager** | (runs with Server) | Watches pods / `ClusterSPIFFEID` CRs and reconciles registration entries |
+| **ClusterSPIFFEID** | `spire.spiffe.io` | Policy: which pods get which SPIFFE ID template (this demo’s registration) |
+
+**Attestation** (before any SVID is issued):
+
+1. **Node attestation** — prove the node is trusted before its Agent may request identities  
+2. **Workload attestation** — prove the pod matches selectors (labels, SA, namespace) before issuing an SVID  
+
+### Component diagram
+
+```mermaid
+flowchart TB
+  subgraph ZTWIM["Zero Trust Workload Identity Manager Operator"]
+    direction TB
+    OPS["Installs & reconciles SPIRE stack via CRs named cluster"]
+  end
+
+  subgraph SPIRE["SPIRE trust domain on the cluster"]
+    direction TB
+    SRV["SpireServer<br/>issues SVIDs · registration DB · trust-domain CA"]
+    CM["SPIRE Controller Manager<br/>watches pods + ClusterSPIFFEID CRs"]
+    AGENT["SpireAgent DaemonSet<br/>node + workload attestation<br/>Workload API"]
+    CSI["SpiffeCSIDriver<br/>mounts agent.sock into pods"]
+    OIDC["SpireOIDCDiscoveryProvider<br/>OIDC discovery + JWKS for JWT-SVIDs"]
+
+    CM <-->|"UNIX socket / Server API"| SRV
+    AGENT <-->|"attest + fetch SVID"| SRV
+    CSI --> AGENT
+    OIDC --> SRV
+  end
+
+  ZTWIM --> SPIRE
+
+  CSIID["ClusterSPIFFEID<br/>podSelector: rhtas.demo/signer=true<br/>template: spiffe://domain/ns/…/sa/…"]
+  CSIID -->|"reconcile entries"| CM
+
+  subgraph POD["Signer workload pod"]
+    COSIGN["cosign sign<br/>SPIFFE_ENDPOINT_SOCKET"]
+    SOCK["/spiffe-workload-api/agent.sock"]
+    COSIGN --> SOCK
+  end
+
+  CSI -->|"CSI volume"| SOCK
+  SOCK -->|"JWT-SVID aud=sigstore"| COSIGN
+
+  subgraph RHTAS["RHTAS artifact trust"]
+    FULCIO["Fulcio<br/>trusts SPIRE OIDC issuer"]
+    REKOR["Rekor"]
+    QUAY["Quay OCI signature"]
+  end
+
+  COSIGN -->|"OIDC identity token = JWT-SVID"| FULCIO
+  FULCIO --> REKOR
+  COSIGN --> QUAY
+  OIDC -.->|"/.well-known/openid-configuration"| FULCIO
 ```
-ClusterSPIFFEID (selector: tekton signer pod labels)
-        ↓
-SPIRE Server → SPIRE Agent → JWT-SVID mounted via CSI / socket
-        ↓
-signer sidecar OR cosign with SPIFFE provider
-        ↓
-Fulcio (trusts SPIRE OIDC issuer) → Rekor → Quay signature
+
+### Identity flow (this demo)
+
+```mermaid
+sequenceDiagram
+  participant Pod as Signer pod (cosign)
+  participant CSI as SpiffeCSIDriver
+  participant Agent as SpireAgent
+  participant Server as SpireServer
+  participant Fulcio as RHTAS Fulcio
+  participant Quay as Quay registry
+
+  Note over Server,Agent: Node attested · ClusterSPIFFEID registered
+  Pod->>CSI: start → mount Workload API volume
+  CSI->>Agent: expose agent.sock in pod
+  Pod->>Agent: request JWT-SVID (audience sigstore)
+  Agent->>Agent: workload attestation (labels / SA / ns)
+  Agent->>Server: fetch / mint SVID for SPIFFE ID
+  Server-->>Pod: JWT-SVID (sub = spiffe://…)
+  Pod->>Fulcio: cosign sign (OIDC token = JWT-SVID)
+  Fulcio-->>Pod: code-signing cert (Subject = SPIFFE ID)
+  Pod->>Quay: push signature + Rekor entry
 ```
 
 ## Prerequisites
 
 - [Zero Trust Workload Identity Manager](https://docs.redhat.com/en/documentation/openshift_container_platform/4.20/html/security_and_compliance/zero-trust-workload-identity-manager) installed
-- SPIRE `SpiffeID` trust domain configured (e.g. `spiffe://prod.example.com`)
-- RHTAS Fulcio configured with **additional** OIDC issuer for SPIRE OIDC discovery endpoint
+- SPIRE stack deployed (`SpireServer` / `SpireAgent` / `SpiffeCSIDriver` / `SpireOIDCDiscoveryProvider`, each named `cluster`)
+- Trust domain configured (e.g. `spiffe://prod.example.com`)
+- RHTAS Fulcio configured with an **additional** OIDC issuer for the SPIRE OIDC discovery endpoint
 
 ## Setup
 
@@ -33,8 +115,11 @@ Fulcio (trusts SPIRE OIDC issuer) → Rekor → Quay signature
 
 ```bash
 # OperatorHub → Zero Trust Workload Identity Manager
-# Create SpiffeID / SPIRE instance per product docs
-oc get spiffeid,spire -A
+# Then create SpireServer, SpireAgent, SpiffeCSIDriver, SpireOIDCDiscoveryProvider
+# (each named "cluster") per product docs.
+
+oc get zerotrustworkloadidentitymanagers,spireservers,spireagents,\
+spiffecsidrivers,spireoidcdiscoveryproviders,clusterspiffeids -A
 ```
 
 ### 2. Register signer workload identity
