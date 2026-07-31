@@ -1,0 +1,17 @@
+# Bind spiffe-cosign-signer to pipelines-scc (Buildah needs uid 1000 + SETFCAP).
+# Cluster-admin once:
+#   oc adm policy add-scc-to-user pipelines-scc \
+#     -z spiffe-cosign-signer -n rhtas-demo-ci
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: spiffe-cosign-signer-pipelines-scc
+  namespace: rhtas-demo-ci
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:openshift:scc:pipelines-scc
+subjects:
+  - kind: ServiceAccount
+    name: spiffe-cosign-signer
+    namespace: rhtas-demo-ci

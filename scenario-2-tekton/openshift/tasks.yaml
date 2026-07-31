@@ -76,10 +76,20 @@ spec:
       default: apps/hello-world
   workspaces:
     - name: source
+  volumes:
+    - name: semgrep-home
+      emptyDir: {}
   steps:
     - name: semgrep
       image: returntocorp/semgrep:latest
       workingDir: $(workspaces.source.path)/$(params.CONTEXT)
+      env:
+        # Restricted SCC UIDs cannot write to /.semgrep or /.docker (HOME=/).
+        - name: HOME
+          value: /tekton/home
+      volumeMounts:
+        - name: semgrep-home
+          mountPath: /tekton/home
       script: |
         #!/usr/bin/env bash
         set -euo pipefail

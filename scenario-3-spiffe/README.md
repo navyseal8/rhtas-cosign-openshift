@@ -237,10 +237,15 @@ oc get cm -n trusted-artifact-signer -l rhtas.redhat.com/resource=server-config 
 oc apply -f ../scenario-2-tekton/openshift/tasks.yaml
 
 oc apply -f openshift/spiffe-signer-sa.yaml
+oc apply -f openshift/scc-spiffe-signer.yaml
+oc adm policy add-scc-to-user pipelines-scc \
+  -z spiffe-cosign-signer -n rhtas-demo-ci
 oc secrets link spiffe-cosign-signer quay-credentials -n rhtas-demo-ci --for=pull,mount
 
 oc apply -f openshift/tasks-spiffe.yaml
 oc apply -f openshift/pipeline-spiffe.yaml
+# Re-apply Scenario 2 tasks if you pulled the HOME fix for sast-semgrep:
+oc apply -f ../scenario-2-tekton/openshift/tasks.yaml
 ```
 
 ### 6. Run (cosign signs with SPIFFE — no TokenRequest)
@@ -256,9 +261,13 @@ tkn pipeline start rhtas-hello-world-spiffe \
   --workspace name=shared-workspace,volumeClaimTemplateFile=../scenario-2-tekton/openshift/workspace-pvc.yaml \
   --workspace name=docker-credentials,secret=quay-credentials \
   --workspace name=git-credentials,secret=github-credentials \
-  --serviceaccount=spiffe-cosign-signer \
   --showlog
 ```
+
+Do **not** pass a global `--serviceaccount=spiffe-cosign-signer` — that forces *every* task
+(including semgrep) onto the signer SA. The Pipeline already sets that SA only on
+`build-push` and `spiffe-sign`. If you do use a global SA, re-apply the updated
+`sast-semgrep` task (writable `HOME`) and grant that SA `pipelines-scc` for Buildah.
 
 The `spiffe-sign` task mounts `csi.spiffe.io`, sets `SPIFFE_ENDPOINT_SOCKET`, and runs `cosign sign` so Cosign fetches a JWT-SVID automatically (audience `sigstore`).
 
@@ -296,6 +305,8 @@ In-cluster verify: reuse the Scenario 2 `hi/cosign` pod pattern; change identity
 | `openshift/spire/apply-agent-config.sh` | Patches agent DaemonSet `hostAliases` + restarts pods |
 | `openshift/clusterspiffeid-tekton-signer.yaml` | Workload registration for signer pods |
 | `openshift/fulcio-spire-oidc-patch.json` | Add SPIRE issuer to Fulcio |
+| `openshift/spiffe-signer-sa.yaml` | Signer SA + Quay pull secret |
+| `openshift/scc-spiffe-signer.yaml` | Bind signer SA to `pipelines-scc` (Buildah) |
 | `openshift/tasks-spiffe.yaml` | Cosign sign via SPIFFE Workload API |
 | `openshift/pipeline-spiffe.yaml` | Build + push + SPIFFE sign |
 | `docs/spiffe-workload-signing.md` | Deeper OIDC / automatic signing notes |
