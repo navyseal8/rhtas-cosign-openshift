@@ -1,0 +1,14 @@
+# Primary ZTWIM CR — sets trust domain (immutable once applied).
+# Prefer trustDomain == OpenShift apps domain (RH recommendation).
+# Apply via README "Setup SPIFFE" (substitutes TRUST_DOMAIN / CLUSTER_NAME).
+apiVersion: operator.openshift.io/v1alpha1
+kind: ZeroTrustWorkloadIdentityManager
+metadata:
+  name: cluster
+  labels:
+    app.kubernetes.io/name: zero-trust-workload-identity-manager
+    app.kubernetes.io/managed-by: zero-trust-workload-identity-manager
+spec:
+  trustDomain: "${TRUST_DOMAIN}"
+  clusterName: "${CLUSTER_NAME}"
+  bundleConfigMap: spire-bundle

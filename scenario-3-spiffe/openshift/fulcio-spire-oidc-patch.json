@@ -1,0 +1,12 @@
+[
+  {
+    "op": "add",
+    "path": "/spec/fulcio/config/OIDCIssuers/-",
+    "value": {
+      "Issuer": "${JWT_ISSUER}",
+      "IssuerURL": "${JWT_ISSUER}",
+      "ClientID": "sigstore",
+      "Type": "uri"
+    }
+  }
+]

@@ -1,0 +1,8 @@
+# Mounts SPIFFE Workload API socket into pods via CSI (csi.spiffe.io).
+apiVersion: operator.openshift.io/v1alpha1
+kind: SpiffeCSIDriver
+metadata:
+  name: cluster
+spec:
+  agentSocketPath: /run/spire/agent-sockets
+  pluginName: csi.spiffe.io

@@ -1,0 +1,16 @@
+# Exposes OIDC discovery + JWKS so Fulcio/Cosign can validate JWT-SVIDs.
+# managedRoute: true → Operator creates Route oidc-discovery.<apps-domain>
+# jwtIssuer MUST match SpireServer.spec.jwtIssuer.
+apiVersion: operator.openshift.io/v1alpha1
+kind: SpireOIDCDiscoveryProvider
+metadata:
+  name: cluster
+spec:
+  logLevel: info
+  logFormat: text
+  csiDriverName: csi.spiffe.io
+  jwtIssuer: "${JWT_ISSUER}"
+  replicaCount: 1
+  managedRoute: "true"
+  # Omit externalSecretRef unless you supply a Secret name for custom Route TLS.
+  # Empty string fails CRD validation: ^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$

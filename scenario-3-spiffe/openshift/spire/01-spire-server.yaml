@@ -1,0 +1,29 @@
+# SPIRE Server — central CA + registration DB for the trust domain.
+# jwtIssuer MUST match SpireOIDCDiscoveryProvider.spec.jwtIssuer (OIDC route URL).
+apiVersion: operator.openshift.io/v1alpha1
+kind: SpireServer
+metadata:
+  name: cluster
+spec:
+  logLevel: info
+  logFormat: text
+  jwtIssuer: "${JWT_ISSUER}"
+  caValidity: 24h
+  defaultX509Validity: 1h
+  defaultJWTValidity: 5m
+  jwtKeyType: rsa-2048
+  caSubject:
+    country: US
+    organization: RHTAS Demo
+    commonName: SPIRE Server CA
+  persistence:
+    size: 5Gi
+    accessMode: ReadWriteOnce
+    storageClass: "${STORAGE_CLASS}"
+  datastore:
+    databaseType: sqlite3
+    connectionString: /run/spire/data/datastore.sqlite3
+    maxOpenConns: 100
+    maxIdleConns: 10
+    connMaxLifetime: 0
+    disableMigration: "false"
