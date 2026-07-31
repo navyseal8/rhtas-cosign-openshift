@@ -178,24 +178,26 @@ oc get po -n zero-trust-workload-identity-manager
 
 On clusters where the node hostname is **not** in CoreDNS, the agent cannot reach kubelet (`lookup <nodeName>: no such host`), so the OIDC provider stays `0/1` with `no identity issued`.
 
-`SpireAgent` has no CR field for this. The setup script patches the agent DaemonSet with `hostAliases` (node name → InternalIP) and sets `create-only` so the Operator does not wipe it. That keeps the Operator-managed `agent.conf` intact (unlike a ConfigMap `kubelet_url` edit, which often gets reverted).
+`SpireAgent` has no CR field for this. The setup script:
+
+1. Sets **`CREATE_ONLY_MODE=true`** on the ZTWIM Subscription (the CR annotation alone does **not** stop the Operator from wiping DaemonSet patches)
+2. Patches the agent DaemonSet with `hostAliases` (node name → InternalIP)
+3. Restarts agent + OIDC pods
 
 ```bash
 ./openshift/spire/apply-agent-config.sh
-# no TRUST_DOMAIN export required for this step
 ```
 
-Then confirm OIDC is Ready and discovery works:
+Confirm OIDC is Ready:
 
 ```bash
 oc get deploy spire-spiffe-oidc-discovery-provider -n zero-trust-workload-identity-manager
 # READY 1/1
+oc get ds spire-agent -n zero-trust-workload-identity-manager -o jsonpath='{.spec.template.spec.hostAliases}{"\n"}'
+# must be non-empty
 
-oc get route -n zero-trust-workload-identity-manager
 curl -sS "${JWT_ISSUER}/.well-known/openid-configuration" | head
 ```
-
-Expect `issuer` in the discovery document to equal `$JWT_ISSUER`.
 
 ### 3. Register the cosign signer workload (`ClusterSPIFFEID`)
 

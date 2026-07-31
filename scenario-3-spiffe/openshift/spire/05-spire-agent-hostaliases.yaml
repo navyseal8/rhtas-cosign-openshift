@@ -1,0 +1,21 @@
+# Rendered at setup by apply-agent-config.sh — do not apply this stub directly.
+# Prefer running: ./openshift/spire/apply-agent-config.sh
+#
+# Adds hostAliases so the SPIRE agent can resolve the Kubernetes node name
+# to its InternalIP (lab/SNO clusters often lack node hostname DNS).
+# That fixes: lookup <nodeName>: no such host → OIDC 0/1 / no identity issued
+#
+# Requires SpireAgent (and ideally ZTWIM) create-only so the Operator does not
+# wipe hostAliases on reconcile.
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: spire-agent
+  namespace: zero-trust-workload-identity-manager
+spec:
+  template:
+    spec:
+      hostAliases:
+        - ip: "${NODE_IP}"
+          hostnames:
+            - "${NODE_NAME}"
