@@ -1,9 +1,15 @@
 # SPIRE Agent DaemonSet — node + workload attestation; serves Workload API.
 # socketPath must match SpiffeCSIDriver.spec.agentSocketPath.
+#
+# create-only: Operator creates RBAC/DS/ConfigMap once, then will NOT overwrite
+# the agent ConfigMap. Required so we can apply 05-spire-agent-configmap.yaml
+# (kubelet_url) during setup without the Operator reverting it.
 apiVersion: operator.openshift.io/v1alpha1
 kind: SpireAgent
 metadata:
   name: cluster
+  annotations:
+    ztwim.openshift.io/create-only: "true"
 spec:
   socketPath: /run/spire/agent-sockets
   logLevel: info

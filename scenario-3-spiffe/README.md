@@ -161,26 +161,49 @@ apply_spire() {
 
 apply_spire openshift/spire/00-ztwim.yaml
 apply_spire openshift/spire/01-spire-server.yaml
-apply_spire openshift/spire/02-spire-agent.yaml
+apply_spire openshift/spire/02-spire-agent.yaml   # includes create-only annotation
 apply_spire openshift/spire/03-spiffe-csi-driver.yaml
 apply_spire openshift/spire/04-spire-oidc-discovery.yaml
 ```
 
-Wait until Ready:
+Wait until Server / Agent / CSI are up:
 
 ```bash
 oc get zerotrustworkloadidentitymanagers,spireservers,spireagents,\
 spiffecsidrivers,spireoidcdiscoveryproviders -A
-
-oc get statefulset,daemonset,deploy -n zero-trust-workload-identity-manager
 oc get po -n zero-trust-workload-identity-manager
+```
 
-# OIDC route (managedRoute: true)
+#### 2b. Agent `kubelet_url` ConfigMap (required on most lab / SNO clusters)
+
+`SpireAgent` has **no** CR field for `kubelet_url`. On clusters where the node hostname is not in CoreDNS, the agent cannot reach kubelet (`lookup <nodeName>: no such host`), so the OIDC provider stays `0/1` with `no identity issued`.
+
+Apply the setup ConfigMap (uses node InternalIP). `02-spire-agent.yaml` already sets `ztwim.openshift.io/create-only=true` so the Operator will not overwrite it:
+
+```bash
+# TRUST_DOMAIN + CLUSTER_NAME already exported in step 0
+./openshift/spire/apply-agent-config.sh
+
+# equivalent:
+# export NODE_IP=$(oc get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}')
+# envsubst < openshift/spire/05-spire-agent-configmap.yaml | oc apply -f -
+# oc delete po -n zero-trust-workload-identity-manager -l app.kubernetes.io/name=agent
+# oc delete po -n zero-trust-workload-identity-manager -l app.kubernetes.io/name=spiffe-oidc-discovery-provider
+```
+
+Then confirm OIDC is Ready and discovery works:
+
+```bash
+oc get deploy spire-spiffe-oidc-discovery-provider -n zero-trust-workload-identity-manager
+# READY 1/1
+
 oc get route -n zero-trust-workload-identity-manager
 curl -sS "${JWT_ISSUER}/.well-known/openid-configuration" | head
 ```
 
 Expect `issuer` in the discovery document to equal `$JWT_ISSUER`.
+
+> **Multi-node:** a single `kubelet_url` IP only fits single-node / SNO. On multi-node clusters, prefer making each node hostname resolve in DNS instead of a shared `kubelet_url`.
 
 ### 3. Register the cosign signer workload (`ClusterSPIFFEID`)
 
@@ -276,6 +299,8 @@ In-cluster verify: reuse the Scenario 2 `hi/cosign` pod pattern; change identity
 | File | Description |
 |------|-------------|
 | `openshift/spire/*.yaml` | ZTWIM + SPIRE CRs (envsubst templates) |
+| `openshift/spire/05-spire-agent-configmap.yaml` | Agent `agent.conf` with `kubelet_url` (setup-time) |
+| `openshift/spire/apply-agent-config.sh` | Renders/applies agent ConfigMap + restarts pods |
 | `openshift/clusterspiffeid-tekton-signer.yaml` | Workload registration for signer pods |
 | `openshift/fulcio-spire-oidc-patch.json` | Add SPIRE issuer to Fulcio |
 | `openshift/tasks-spiffe.yaml` | Cosign sign via SPIFFE Workload API |
@@ -288,6 +313,7 @@ In-cluster verify: reuse the Scenario 2 `hi/cosign` pod pattern; change identity
 |---------|-------|
 | `the server doesn't have a resource type "spiffeid"` | Use `clusterspiffeids` / `spireservers` (not legacy names) |
 | CSI mount fails / no `agent.sock` | `SpiffeCSIDriver` + `SpireAgent` Ready; pod has `rhtas.demo/signer=true` |
+| OIDC deploy `0/1`, logs `no identity issued` / agent `lookup <node>: no such host` | Apply `05-spire-agent-configmap.yaml` via `./openshift/spire/apply-agent-config.sh` (needs SpireAgent `create-only`) |
 | Fulcio rejects JWT | `$JWT_ISSUER` on Fulcio matches discovery `issuer`; `ClientID: sigstore` |
 | Wrong SPIFFE ID in cert | `ClusterSPIFFEID` template / `TRUST_DOMAIN` / SA name |
 | OIDC curl fails | `managedRoute: true`; wait for route; check TLS / DNS |
