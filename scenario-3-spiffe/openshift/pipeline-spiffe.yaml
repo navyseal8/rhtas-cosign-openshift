@@ -18,6 +18,9 @@ spec:
     - name: git-revision
       type: string
       default: main
+    - name: spire-oidc-issuer
+      type: string
+      description: Must match SpireServer / SpireOIDCDiscoveryProvider jwtIssuer
   workspaces:
     - name: shared-workspace
     - name: docker-credentials
@@ -81,6 +84,8 @@ spec:
       params:
         - name: IMAGE
           value: quay.io/$(params.quay-org)/$(params.quay-repo):spiffe-$(context.pipelineRun.uid)
+        - name: SPIRE_OIDC_ISSUER
+          value: $(params.spire-oidc-issuer)
       # Pod template label required for ClusterSPIFFEID selector
       podTemplate:
         labels:

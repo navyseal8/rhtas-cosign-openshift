@@ -5,5 +5,7 @@ metadata:
   namespace: rhtas-demo-ci
   labels:
     rhtas.demo/signer: "true"
+secrets:
+  - name: quay-credentials
 imagePullSecrets:
   - name: quay-credentials

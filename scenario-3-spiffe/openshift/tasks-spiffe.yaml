@@ -7,6 +7,9 @@ spec:
   params:
     - name: IMAGE
       type: string
+    - name: SPIRE_OIDC_ISSUER
+      type: string
+      description: SpireOIDCDiscoveryProvider jwtIssuer URL (same as SpireServer.spec.jwtIssuer)
   workspaces:
     - name: dockerconfig
   volumes:
@@ -39,8 +42,7 @@ spec:
         export COSIGN_ROOT="${TUF_URL}/root.json"
         export COSIGN_YES=true
 
-        # SPIRE OIDC discovery — replace with your SPIRE deployment URL
-        export SPIRE_OIDC_ISSUER="${SPIRE_OIDC_ISSUER:-https://oidc-discovery.spire.example.com}"
+        export SPIRE_OIDC_ISSUER="$(params.SPIRE_OIDC_ISSUER)"
         export COSIGN_OIDC_ISSUER="${SPIRE_OIDC_ISSUER}"
         export COSIGN_CERTIFICATE_OIDC_ISSUER="${SPIRE_OIDC_ISSUER}"
 

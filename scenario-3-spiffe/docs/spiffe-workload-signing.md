@@ -2,6 +2,14 @@
 
 Scenario 3 replaces Kubernetes TokenRequest scripts with **SPIFFE JWT-SVIDs** issued by SPIRE after workload attestation.
 
+## Setup
+
+End-to-end SPIRE install + Fulcio federation + pipeline apply is in
+**[README.md — Setup SPIFFE](../README.md#setup-spiffe-required-before-cosign)**
+(`openshift/spire/*.yaml` templates + `envsubst`).
+
+This document focuses on *why* SPIFFE for signing and the Cosign / Fulcio identity details.
+
 ## Why SPIFFE for signing?
 
 | K8s SA token (S1/S2) | SPIFFE JWT-SVID (S3) |

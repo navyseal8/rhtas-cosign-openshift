@@ -104,95 +104,190 @@ sequenceDiagram
 
 ## Prerequisites
 
-- [Zero Trust Workload Identity Manager](https://docs.redhat.com/en/documentation/openshift_container_platform/4.20/html/security_and_compliance/zero-trust-workload-identity-manager) installed
-- SPIRE stack deployed (`SpireServer` / `SpireAgent` / `SpiffeCSIDriver` / `SpireOIDCDiscoveryProvider`, each named `cluster`)
-- Trust domain configured (e.g. `spiffe://prod.example.com`)
-- RHTAS Fulcio configured with an **additional** OIDC issuer for the SPIRE OIDC discovery endpoint
+- Cluster-admin on OpenShift 4.20+
+- [Zero Trust Workload Identity Manager](https://docs.redhat.com/en/documentation/openshift_container_platform/4.20/html/security_and_compliance/zero-trust-workload-identity-manager) Operator installed (CSV `Succeeded`)
+- RHTAS (`trusted-artifact-signer`) Ready — Fulcio / Rekor / TUF routes
+- Scenario 2 build tasks available (or apply them from `../scenario-2-tekton`)
+- Quay robot secret `quay-credentials` in `rhtas-demo-ci`
 
-## Setup
+## Setup SPIFFE (required before cosign)
 
-### 1. Install Workload Identity Manager
+Follow the [product deploy order](https://docs.redhat.com/en/documentation/openshift_container_platform/4.20/html/security_and_compliance/zero-trust-workload-identity-manager): Operator → `ZeroTrustWorkloadIdentityManager` → `SpireServer` → `SpireAgent` → `SpiffeCSIDriver` → `SpireOIDCDiscoveryProvider` → `ClusterSPIFFEID` → Fulcio federation → pipeline.
+
+All SPIRE CRs **must** be named `cluster`.
+
+### 0. Export cluster values
 
 ```bash
-# OperatorHub → Zero Trust Workload Identity Manager
-# Then create SpireServer, SpireAgent, SpiffeCSIDriver, SpireOIDCDiscoveryProvider
-# (each named "cluster") per product docs.
+cd scenario-3-spiffe
 
+export APP_DOMAIN=$(oc get ingresses.config.openshift.io cluster -o jsonpath='{.spec.domain}')
+# RH recommends trustDomain == apps domain
+export TRUST_DOMAIN="${APP_DOMAIN}"
+export CLUSTER_NAME=$(oc get infrastructure cluster -o jsonpath='{.status.infrastructureName}' | cut -c1-63)
+export JWT_ISSUER="https://oidc-discovery.${APP_DOMAIN}"
+export STORAGE_CLASS=$(oc get sc -o jsonpath='{.items[?(@.metadata.annotations.storageclass\.kubernetes\.io/is-default-class=="true")].metadata.name}')
+# fallback if no default SC annotated:
+: "${STORAGE_CLASS:=$(oc get sc -o jsonpath='{.items[0].metadata.name}')}"
+
+echo "TRUST_DOMAIN=$TRUST_DOMAIN"
+echo "CLUSTER_NAME=$CLUSTER_NAME"
+echo "JWT_ISSUER=$JWT_ISSUER"
+echo "STORAGE_CLASS=$STORAGE_CLASS"
+```
+
+`jwtIssuer` is the **OIDC Discovery Provider route URL**, not the SPIFFE trust domain string.
+
+### 1. Confirm the Operator is installed
+
+```bash
+oc get csv -n zero-trust-workload-identity-manager \
+  -l operators.coreos.com/openshift-zero-trust-workload-identity-manager.zero-trust-workload-identity-manager
+# PHASE must be Succeeded
+
+oc get crd spireservers.operator.openshift.io clusterspiffeids.spire.spiffe.io
+```
+
+Install from OperatorHub if missing: **Zero Trust Workload Identity Manager** (stable-v1).
+
+### 2. Deploy the SPIRE stack
+
+Templates live in `openshift/spire/` (`${VAR}` placeholders). Render and apply:
+
+```bash
+apply_spire() {
+  envsubst < "$1" | oc apply -f -
+}
+
+apply_spire openshift/spire/00-ztwim.yaml
+apply_spire openshift/spire/01-spire-server.yaml
+apply_spire openshift/spire/02-spire-agent.yaml
+apply_spire openshift/spire/03-spiffe-csi-driver.yaml
+apply_spire openshift/spire/04-spire-oidc-discovery.yaml
+```
+
+Wait until Ready:
+
+```bash
 oc get zerotrustworkloadidentitymanagers,spireservers,spireagents,\
-spiffecsidrivers,spireoidcdiscoveryproviders,clusterspiffeids -A
+spiffecsidrivers,spireoidcdiscoveryproviders -A
+
+oc get statefulset,daemonset,deploy -n zero-trust-workload-identity-manager
+oc get po -n zero-trust-workload-identity-manager
+
+# OIDC route (managedRoute: true)
+oc get route -n zero-trust-workload-identity-manager
+curl -sS "${JWT_ISSUER}/.well-known/openid-configuration" | head
 ```
 
-### 2. Register signer workload identity
+Expect `issuer` in the discovery document to equal `$JWT_ISSUER`.
+
+### 3. Register the cosign signer workload (`ClusterSPIFFEID`)
 
 ```bash
-oc apply -f openshift/clusterspiffeid-tekton-signer.yaml
+oc apply -f openshift/namespace.yaml   # ensures rhtas-demo-ci exists + label
+
+envsubst < openshift/clusterspiffeid-tekton-signer.yaml | oc apply -f -
+oc get clusterspiffeids
 ```
 
-This maps pods with label `rhtas.demo/signer: "true"` to:
+Pods labeled `rhtas.demo/signer=true` in `rhtas-demo-ci` receive:
 
-```
-spiffe://<trust-domain>/ns/rhtas-demo-ci/sa/spiffe-cosign-signer
-```
-
-### 3. Federate SPIRE OIDC with RHTAS Fulcio
-
-Add SPIRE's OIDC discovery URL to `Securesign` Fulcio `OIDCIssuers`:
-
-```yaml
-- Issuer: "https://oidc-discovery.<spire-domain>"
-  IssuerURL: "https://oidc-discovery.<spire-domain>"
-  ClientID: "trusted-artifact-signer"
-  Type: email   # or per SPIRE JWT-SVID claims documentation
+```text
+spiffe://<TRUST_DOMAIN>/ns/rhtas-demo-ci/sa/spiffe-cosign-signer
 ```
 
-See [docs/spiffe-workload-signing.md](docs/spiffe-workload-signing.md).
+### 4. Federate SPIRE OIDC with RHTAS Fulcio
 
-### 4. Deploy SPIFFE-enabled pipeline
+Fulcio must trust `$JWT_ISSUER` so Cosign can exchange a JWT-SVID for a signing cert. `Type: uri` matches SPIFFE ID subjects (`spiffe://…`).
 
 ```bash
-# Reuse build tasks from Scenario 2
+# Preview patch (substitutes JWT_ISSUER)
+envsubst < openshift/fulcio-spire-oidc-patch.json
+
+oc patch securesign securesign-sample -n trusted-artifact-signer --type=json \
+  --patch "$(envsubst < openshift/fulcio-spire-oidc-patch.json)"
+
+# Confirm kubernetes (Scenario 2) + SPIRE issuers both present:
+oc get cm -n trusted-artifact-signer -l rhtas.redhat.com/resource=server-config \
+  -o jsonpath='{.items[-1:].data.config\.yaml}{"\n"}'
+```
+
+### 5. Deploy the SPIFFE cosign pipeline
+
+```bash
+# Build tasks from Scenario 2 (git-clone, maven, semgrep, buildah-push)
 oc apply -f ../scenario-2-tekton/openshift/tasks.yaml
 
-oc apply -f openshift/namespace.yaml
 oc apply -f openshift/spiffe-signer-sa.yaml
+oc secrets link spiffe-cosign-signer quay-credentials -n rhtas-demo-ci --for=pull,mount
+
 oc apply -f openshift/tasks-spiffe.yaml
 oc apply -f openshift/pipeline-spiffe.yaml
 ```
 
-### 5. Run
+### 6. Run (cosign signs with SPIFFE — no TokenRequest)
 
 ```bash
 tkn pipeline start rhtas-hello-world-spiffe \
   -n rhtas-demo-ci \
-  --param quay-org=acme \
+  --param quay-org=rhn_support_jeretan \
+  --param quay-repo=hello-world-cosign \
+  --param spire-oidc-issuer="${JWT_ISSUER}" \
+  --param git-url=https://github.com/navyseal8/rhtas-cosign-openshift.git \
+  --param git-revision=main \
   --workspace name=shared-workspace,volumeClaimTemplateFile=../scenario-2-tekton/openshift/workspace-pvc.yaml \
+  --workspace name=docker-credentials,secret=quay-credentials \
+  --workspace name=git-credentials,secret=github-credentials \
+  --serviceaccount=spiffe-cosign-signer \
   --showlog
 ```
 
-The `spiffe-sign` task runs **after** image push. Cosign obtains a JWT-SVID from the SPIFFE workload API (`SPIFFE_ENDPOINT_SOCKET`) and signs without a manually passed token.
+The `spiffe-sign` task mounts `csi.spiffe.io`, sets `SPIFFE_ENDPOINT_SOCKET`, and runs `cosign sign` so Cosign fetches a JWT-SVID automatically (audience `sigstore`).
 
 ## Verify
 
+Use the same RHTAS trust material as Scenario 2 (`rhtas-trust` ConfigMap / TUF init), but with the **SPIFFE** identity and **SPIRE** OIDC issuer:
+
 ```bash
+IMAGE=quay.io/rhn_support_jeretan/hello-world-cosign@sha256:<digest>
+REKOR=$(oc get rekor -n trusted-artifact-signer -o jsonpath='{.items[0].status.url}')
+
 cosign verify \
-  --certificate-identity-regexp='^spiffe://.*/ns/rhtas-demo-ci/sa/spiffe-cosign-signer$' \
-  --certificate-oidc-issuer="https://oidc-discovery.<spire-domain>" \
-  quay.io/acme/rhtas-hello-world:spiffe-<run-id>
+  --rekor-url="$REKOR" \
+  --certificate-identity-regexp="^spiffe://${TRUST_DOMAIN}/ns/rhtas-demo-ci/sa/spiffe-cosign-signer$" \
+  --certificate-oidc-issuer="${JWT_ISSUER}" \
+  "$IMAGE"
 ```
+
+In-cluster verify: reuse the Scenario 2 `hi/cosign` pod pattern; change identity / issuer flags to the SPIFFE values above.
 
 ## Comparison across scenarios
 
 | | S1 Jenkins | S2 Chains | S3 SPIFFE |
 |---|------------|-----------|-----------|
-| Identity | K8s SA `rhtas-signer` | K8s SA `tekton-chains-builder` | SPIFFE ID |
+| Identity | K8s SA `rhtas-signer` | `tekton-chains-controller` | SPIFFE ID |
 | Token minting | `oc create token` in pipeline | Chains controller | SPIRE agent (auto) |
 | Attestation | RBAC only | TaskRun metadata | SPIRE node/workload attestation |
-| cosign invocation | Explicit in Jenkinsfile | Chains controller | Signer task / ambient |
+| cosign invocation | Explicit in Jenkinsfile | Chains controller | `spiffe-sign` task |
 
 ## Files
 
 | File | Description |
 |------|-------------|
-| `openshift/clusterspiffeid-tekton-signer.yaml` | SPIFFE registration for signer pods |
-| `openshift/pipeline-spiffe.yaml` | Build + push + SPIFFE-aware sign |
-| `docs/spiffe-workload-signing.md` | OIDC federation and automatic signing flow |
+| `openshift/spire/*.yaml` | ZTWIM + SPIRE CRs (envsubst templates) |
+| `openshift/clusterspiffeid-tekton-signer.yaml` | Workload registration for signer pods |
+| `openshift/fulcio-spire-oidc-patch.json` | Add SPIRE issuer to Fulcio |
+| `openshift/tasks-spiffe.yaml` | Cosign sign via SPIFFE Workload API |
+| `openshift/pipeline-spiffe.yaml` | Build + push + SPIFFE sign |
+| `docs/spiffe-workload-signing.md` | Deeper OIDC / automatic signing notes |
+
+## SPIFFE troubleshooting
+
+| Symptom | Check |
+|---------|-------|
+| `the server doesn't have a resource type "spiffeid"` | Use `clusterspiffeids` / `spireservers` (not legacy names) |
+| CSI mount fails / no `agent.sock` | `SpiffeCSIDriver` + `SpireAgent` Ready; pod has `rhtas.demo/signer=true` |
+| Fulcio rejects JWT | `$JWT_ISSUER` on Fulcio matches discovery `issuer`; `ClientID: sigstore` |
+| Wrong SPIFFE ID in cert | `ClusterSPIFFEID` template / `TRUST_DOMAIN` / SA name |
+| OIDC curl fails | `managedRoute: true`; wait for route; check TLS / DNS |
