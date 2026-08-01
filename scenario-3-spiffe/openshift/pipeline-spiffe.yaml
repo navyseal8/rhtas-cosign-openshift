@@ -21,9 +21,15 @@ spec:
     - name: spire-oidc-issuer
       type: string
       description: Must match SpireServer / SpireOIDCDiscoveryProvider jwtIssuer
+    - name: fulcio-url
+      type: string
+      description: RHTAS Fulcio Ready URL
+    - name: rekor-url
+      type: string
+      description: RHTAS Rekor Ready URL
     - name: tuf-url
       type: string
-      description: RHTAS TUF Ready URL (Cosign 3 signing config + trust roots)
+      description: RHTAS TUF Ready URL
     - name: tuf-root-checksum
       type: string
       description: sha256 of TUF 1.root.json (cosign initialize --root-checksum)
@@ -92,11 +98,14 @@ spec:
           value: quay.io/$(params.quay-org)/$(params.quay-repo):spiffe-$(context.pipelineRun.uid)
         - name: SPIRE_OIDC_ISSUER
           value: $(params.spire-oidc-issuer)
+        - name: FULCIO_URL
+          value: $(params.fulcio-url)
+        - name: REKOR_URL
+          value: $(params.rekor-url)
         - name: TUF_URL
           value: $(params.tuf-url)
         - name: TUF_ROOT_CHECKSUM
           value: $(params.tuf-root-checksum)
-      # Pod template label required for ClusterSPIFFEID selector
       podTemplate:
         labels:
           rhtas.demo/signer: "true"

@@ -93,15 +93,22 @@ Cosign 2.x+ includes a **SPIFFE workload identity provider** that reads `SPIFFE_
 Inside the `spiffe-sign` task:
 
 ```bash
-export COSIGN_FULCIO_URL=...
-export COSIGN_REKOR_URL=...
-export COSIGN_OIDC_ISSUER=https://oidc-discovery.<spire-domain>
-export COSIGN_CERTIFICATE_OIDC_ISSUER=https://oidc-discovery.<spire-domain>
+TUF_ROOT_CHECKSUM=$(curl -sS "${TUF_URL}/1.root.json" | sha256sum | awk '{print $1}')
+cosign initialize \
+  --mirror "$TUF_URL" \
+  --root "$TUF_URL/1.root.json" \
+  --root-checksum "$TUF_ROOT_CHECKSUM"
 
-cosign initialize --mirror "$TUF_URL" --root "$TUF_URL/root.json"
-
-# Cosign detects SPIFFE via SPIFFE_ENDPOINT_SOCKET — no --identity-token flag
-cosign sign -y "${IMAGE}"
+# Cosign 3: custom OIDC issuer conflicts with default --use-signing-config=true.
+# Private RHTAS + SPIFFE uses the legacy service-URL path.
+# Cosign detects SPIFFE via SPIFFE_ENDPOINT_SOCKET — no --identity-token flag.
+cosign sign -y \
+  --use-signing-config=false \
+  --new-bundle-format=false \
+  --fulcio-url="$FULCIO_URL" \
+  --rekor-url="$REKOR_URL" \
+  --oidc-issuer="https://oidc-discovery.<spire-domain>" \
+  "${IMAGE}"
 ```
 
 **Automatic** means:

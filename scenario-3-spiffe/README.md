@@ -247,10 +247,13 @@ oc apply -f openshift/pipeline-spiffe.yaml
 
 ### 6. Run (cosign signs with SPIFFE — no TokenRequest)
 
-Cosign 3 loads Fulcio/Rekor from the **TUF signing config** after `cosign initialize`.
-Do not pass `--fulcio-url` / `--rekor-url` (that errors with `cannot specify service URLs and use signing config`).
+Cosign 3 defaults to `--use-signing-config=true`. A custom SPIRE `--oidc-issuer` counts as a
+service URL and conflicts with that default. This task uses the private-Sigstore path:
+`--use-signing-config=false --new-bundle-format=false` plus Fulcio/Rekor/OIDC.
 
 ```bash
+export FULCIO_URL=$(oc get fulcio -n trusted-artifact-signer -o jsonpath='{.items[0].status.url}')
+export REKOR_URL=$(oc get rekor -n trusted-artifact-signer -o jsonpath='{.items[0].status.url}')
 export TUF_URL=$(oc get tuf -n trusted-artifact-signer -o jsonpath='{.items[0].status.url}')
 export TUF_ROOT_CHECKSUM=$(curl -sS "${TUF_URL}/1.root.json" | sha256sum | awk '{print $1}')
 
@@ -259,6 +262,8 @@ tkn pipeline start rhtas-hello-world-spiffe \
   --param quay-org=rhn_support_jeretan \
   --param quay-repo=hello-world-cosign \
   --param spire-oidc-issuer="${JWT_ISSUER}" \
+  --param fulcio-url="${FULCIO_URL}" \
+  --param rekor-url="${REKOR_URL}" \
   --param tuf-url="${TUF_URL}" \
   --param tuf-root-checksum="${TUF_ROOT_CHECKSUM}" \
   --param git-url=https://github.com/navyseal8/rhtas-cosign-openshift.git \
@@ -329,5 +334,5 @@ In-cluster verify: reuse the Scenario 2 `hi/cosign` pod pattern; change identity
 | Fulcio rejects JWT | `$JWT_ISSUER` on Fulcio matches discovery `issuer`; `ClientID: sigstore` |
 | Wrong SPIFFE ID in cert | `ClusterSPIFFEID` template / `TRUST_DOMAIN` / SA name |
 | OIDC curl fails | `managedRoute: true`; wait for route; check TLS / DNS |
-| `cannot specify service URLs and use signing config` | Cosign 3: TUF init only — no `--fulcio-url` / `--rekor-url` / `COSIGN_*_URL` |
+| `cannot specify service URLs and use signing config` | Cosign 3: SPIRE `--oidc-issuer` conflicts with default signing-config — task uses `--use-signing-config=false --new-bundle-format=false` |
 | Root checksum deprecation warning | Pass `tuf-root-checksum` (`sha256` of `${TUF_URL}/1.root.json`) |

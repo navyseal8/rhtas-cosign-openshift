@@ -10,9 +10,13 @@ spec:
     - name: SPIRE_OIDC_ISSUER
       type: string
       description: SpireOIDCDiscoveryProvider jwtIssuer (JWT iss / Fulcio OIDC issuer)
+    - name: FULCIO_URL
+      type: string
+    - name: REKOR_URL
+      type: string
     - name: TUF_URL
       type: string
-      description: RHTAS TUF Ready URL (provides signing config + trust roots for Cosign 3)
+      description: RHTAS TUF Ready URL (trusted_root for SCT / CA during keyless sign)
     - name: TUF_ROOT_CHECKSUM
       type: string
       description: sha256 of TUF 1.root.json (cosign initialize --root-checksum)
@@ -35,16 +39,10 @@ spec:
         value: $(workspaces.dockerconfig.path)
       - name: COSIGN_YES
         value: "true"
-      # OIDC issuer for SPIFFE JWT-SVID → Fulcio (do not set COSIGN_FULCIO_URL / COSIGN_REKOR_URL —
-      # Cosign 3 loads those from TUF signing config after initialize)
-      - name: COSIGN_OIDC_ISSUER
-        value: $(params.SPIRE_OIDC_ISSUER)
-      - name: COSIGN_CERTIFICATE_OIDC_ISSUER
-        value: $(params.SPIRE_OIDC_ISSUER)
       - name: COSIGN_MIRROR
         value: $(params.TUF_URL)
       - name: COSIGN_ROOT
-        value: $(params.TUF_URL)/root.json
+        value: $(params.TUF_URL)/1.root.json
     volumeMounts:
       - name: spiffe-workload-api
         mountPath: /spiffe-workload-api
@@ -52,8 +50,11 @@ spec:
       - name: cosign-home
         mountPath: /tekton/home
   steps:
-    # hi/cosign is distroless (no bash). Cosign 3: initialize TUF then sign WITHOUT
-    # --fulcio-url/--rekor-url (conflicts with TUF signing config).
+    # hi/cosign is distroless (no bash).
+    # Cosign 3 defaults to --use-signing-config=true. A custom OIDC issuer (SPIRE)
+    # counts as a "service URL" and errors with:
+    #   cannot specify service URLs and use signing config
+    # For private RHTAS + SPIFFE, disable signing-config and pass Fulcio/Rekor/OIDC.
     - name: tuf-init
       image: registry.access.redhat.com/hi/cosign:3.1.1
       command: ["cosign"]
@@ -68,5 +69,10 @@ spec:
       args:
         - sign
         - -y
-        # JWT-SVID from SPIFFE_ENDPOINT_SOCKET; Fulcio/Rekor from TUF signing config
+        - --use-signing-config=false
+        - --new-bundle-format=false
+        - --fulcio-url=$(params.FULCIO_URL)
+        - --rekor-url=$(params.REKOR_URL)
+        - --oidc-issuer=$(params.SPIRE_OIDC_ISSUER)
+        # JWT-SVID from SPIFFE_ENDPOINT_SOCKET (audience sigstore)
         - $(params.IMAGE)
