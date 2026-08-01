@@ -107,7 +107,6 @@ sequenceDiagram
 - Cluster-admin on OpenShift 4.20+
 - [Zero Trust Workload Identity Manager](https://docs.redhat.com/en/documentation/openshift_container_platform/4.20/html/security_and_compliance/zero-trust-workload-identity-manager) Operator installed (CSV `Succeeded`)
 - RHTAS (`trusted-artifact-signer`) Ready — Fulcio / Rekor / TUF routes
-- Scenario 2 build tasks available (or apply them from `../scenario-2-tekton`)
 - Quay robot secret `quay-credentials` in `rhtas-demo-ci`
 
 ## Setup SPIFFE (required before cosign)
@@ -233,8 +232,8 @@ oc get cm -n trusted-artifact-signer -l rhtas.redhat.com/resource=server-config 
 ### 5. Deploy the SPIFFE cosign pipeline
 
 ```bash
-# Build tasks from Scenario 2 (git-clone, maven, semgrep, buildah-push)
-oc apply -f ../scenario-2-tekton/openshift/tasks.yaml
+# Build tasks (git-clone, maven, semgrep, buildah-push) — local copy of Scenario 2 tasks
+oc apply -f openshift/tasks.yaml
 
 oc apply -f openshift/spiffe-signer-sa.yaml
 oc apply -f openshift/scc-spiffe-signer.yaml
@@ -244,21 +243,27 @@ oc secrets link spiffe-cosign-signer quay-credentials -n rhtas-demo-ci --for=pul
 
 oc apply -f openshift/tasks-spiffe.yaml
 oc apply -f openshift/pipeline-spiffe.yaml
-# Re-apply Scenario 2 tasks if you pulled the HOME fix for sast-semgrep:
-oc apply -f ../scenario-2-tekton/openshift/tasks.yaml
 ```
 
 ### 6. Run (cosign signs with SPIFFE — no TokenRequest)
 
+Cosign 3 loads Fulcio/Rekor from the **TUF signing config** after `cosign initialize`.
+Do not pass `--fulcio-url` / `--rekor-url` (that errors with `cannot specify service URLs and use signing config`).
+
 ```bash
+export TUF_URL=$(oc get tuf -n trusted-artifact-signer -o jsonpath='{.items[0].status.url}')
+export TUF_ROOT_CHECKSUM=$(curl -sS "${TUF_URL}/1.root.json" | sha256sum | awk '{print $1}')
+
 tkn pipeline start rhtas-hello-world-spiffe \
   -n rhtas-demo-ci \
   --param quay-org=rhn_support_jeretan \
   --param quay-repo=hello-world-cosign \
   --param spire-oidc-issuer="${JWT_ISSUER}" \
+  --param tuf-url="${TUF_URL}" \
+  --param tuf-root-checksum="${TUF_ROOT_CHECKSUM}" \
   --param git-url=https://github.com/navyseal8/rhtas-cosign-openshift.git \
   --param git-revision=main \
-  --workspace name=shared-workspace,volumeClaimTemplateFile=../scenario-2-tekton/openshift/workspace-pvc.yaml \
+  --workspace name=shared-workspace,volumeClaimTemplateFile=openshift/workspace-pvc.yaml \
   --workspace name=docker-credentials,secret=quay-credentials \
   --workspace name=git-credentials,secret=github-credentials \
   --showlog
@@ -266,10 +271,11 @@ tkn pipeline start rhtas-hello-world-spiffe \
 
 Do **not** pass a global `--serviceaccount=spiffe-cosign-signer` — that forces *every* task
 (including semgrep) onto the signer SA. The Pipeline already sets that SA only on
-`build-push` and `spiffe-sign`. If you do use a global SA, re-apply the updated
-`sast-semgrep` task (writable `HOME`) and grant that SA `pipelines-scc` for Buildah.
+`build-push` and `spiffe-sign`. If you do use a global SA, re-apply `openshift/tasks.yaml`
+(writable `HOME` on `sast-semgrep`) and grant that SA `pipelines-scc` for Buildah.
 
-The `spiffe-sign` task mounts `csi.spiffe.io`, sets `SPIFFE_ENDPOINT_SOCKET`, and runs `cosign sign` so Cosign fetches a JWT-SVID automatically (audience `sigstore`).
+The `spiffe-sign` task mounts `csi.spiffe.io`, sets `SPIFFE_ENDPOINT_SOCKET`, initializes TUF,
+then runs `cosign sign` so Cosign fetches a JWT-SVID automatically (audience `sigstore`).
 
 ## Verify
 
@@ -307,6 +313,8 @@ In-cluster verify: reuse the Scenario 2 `hi/cosign` pod pattern; change identity
 | `openshift/fulcio-spire-oidc-patch.json` | Add SPIRE issuer to Fulcio |
 | `openshift/spiffe-signer-sa.yaml` | Signer SA + Quay pull secret |
 | `openshift/scc-spiffe-signer.yaml` | Bind signer SA to `pipelines-scc` (Buildah) |
+| `openshift/tasks.yaml` | Build tasks (cloned from Scenario 2) |
+| `openshift/workspace-pvc.yaml` | Pipeline workspace PVC template |
 | `openshift/tasks-spiffe.yaml` | Cosign sign via SPIFFE Workload API |
 | `openshift/pipeline-spiffe.yaml` | Build + push + SPIFFE sign |
 | `docs/spiffe-workload-signing.md` | Deeper OIDC / automatic signing notes |
@@ -321,3 +329,5 @@ In-cluster verify: reuse the Scenario 2 `hi/cosign` pod pattern; change identity
 | Fulcio rejects JWT | `$JWT_ISSUER` on Fulcio matches discovery `issuer`; `ClientID: sigstore` |
 | Wrong SPIFFE ID in cert | `ClusterSPIFFEID` template / `TRUST_DOMAIN` / SA name |
 | OIDC curl fails | `managedRoute: true`; wait for route; check TLS / DNS |
+| `cannot specify service URLs and use signing config` | Cosign 3: TUF init only — no `--fulcio-url` / `--rekor-url` / `COSIGN_*_URL` |
+| Root checksum deprecation warning | Pass `tuf-root-checksum` (`sha256` of `${TUF_URL}/1.root.json`) |

@@ -1,0 +1,290 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: git-clone
+  namespace: rhtas-demo-ci
+spec:
+  description: Clone a Git repository into the shared workspace
+  params:
+    - name: url
+      type: string
+    - name: revision
+      type: string
+      default: main
+  workspaces:
+    - name: output
+    - name: basic-auth
+      optional: true
+      description: Optional Secret with username + password (GitHub PAT) for private HTTPS repos
+  steps:
+    - name: clone
+      image: registry.redhat.io/openshift-pipelines/pipelines-git-init-rhel8:v1.14.0
+      env:
+        - name: HOME
+          value: /tekton/home
+      script: |
+        #!/usr/bin/env bash
+        set -euo pipefail
+        CHECKOUT_DIR="$(workspaces.output.path)"
+        REPO_URL="$(params.url)"
+        REVISION="$(params.revision)"
+
+        # PVC workspaces may retain files from a previous run (no find in git-init image)
+        shopt -s dotglob nullglob
+        rm -rf "${CHECKOUT_DIR:?}"/*
+
+        AUTH_DIR="$(workspaces.basic-auth.path)"
+        if [[ -n "${AUTH_DIR}" && -f "${AUTH_DIR}/username" && -f "${AUTH_DIR}/password" ]]; then
+          USER="$(cat "${AUTH_DIR}/username")"
+          PASS="$(cat "${AUTH_DIR}/password")"
+          # Inject credentials into HTTPS URL for private GitHub repos
+          REPO_URL="$(echo "${REPO_URL}" | sed -E "s#https://#https://${USER}:${PASS}@#")"
+        fi
+
+        git clone --depth 1 --branch "${REVISION}" "${REPO_URL}" "${CHECKOUT_DIR}"
+---
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: maven-build
+  namespace: rhtas-demo-ci
+spec:
+  params:
+    - name: CONTEXT
+      type: string
+      default: apps/hello-world
+  workspaces:
+    - name: source
+  steps:
+    - name: mvn-package
+      image: registry.access.redhat.com/ubi9/openjdk-21:1.21
+      workingDir: $(workspaces.source.path)/$(params.CONTEXT)
+      script: |
+        #!/usr/bin/env bash
+        set -euo pipefail
+        mvn -q -DskipTests=false test package
+---
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: sast-semgrep
+  namespace: rhtas-demo-ci
+spec:
+  params:
+    - name: CONTEXT
+      type: string
+      default: apps/hello-world
+  workspaces:
+    - name: source
+  volumes:
+    - name: semgrep-home
+      emptyDir: {}
+  steps:
+    - name: semgrep
+      image: returntocorp/semgrep:latest
+      workingDir: $(workspaces.source.path)/$(params.CONTEXT)
+      env:
+        # Restricted SCC UIDs cannot write to /.semgrep or /.docker (HOME=/).
+        - name: HOME
+          value: /tekton/home
+      volumeMounts:
+        - name: semgrep-home
+          mountPath: /tekton/home
+      script: |
+        #!/usr/bin/env bash
+        set -euo pipefail
+        semgrep scan --config p/java --error --quiet .
+---
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: buildah-push
+  namespace: rhtas-demo-ci
+  annotations:
+    chains.tekton.dev/format: simplesigning
+spec:
+  params:
+    - name: IMAGE
+      type: string
+    - name: BUILD_VERSION
+      type: string
+    - name: CONTEXT
+      type: string
+      default: apps/hello-world
+  workspaces:
+    - name: source
+    - name: dockerconfig
+  results:
+    - name: IMAGE_URL
+      description: Image reference Chains uses for OCI signing (type-hint)
+    - name: IMAGE_DIGEST
+      description: Digest of the built image (sha256:..., Chains type-hint)
+  stepTemplate:
+    env:
+      - name: HOME
+        value: /home/build
+      - name: STORAGE_DRIVER
+        value: vfs
+      - name: BUILDAH_ISOLATION
+        value: chroot
+      - name: BUILDAH_FORMAT
+        value: docker
+  volumes:
+    - name: varlibcontainers
+      emptyDir: {}
+    - name: buildah-home
+      emptyDir: {}
+  steps:
+    - name: build-and-push
+      image: registry.access.redhat.com/ubi9/buildah:9.8-1784750807
+      workingDir: $(workspaces.source.path)/$(params.CONTEXT)
+      # Tip 4 (RH): uid 1000 + SETFCAP + allowPrivilegeEscalation under pipelines-scc
+      securityContext:
+        runAsUser: 1000
+        allowPrivilegeEscalation: true
+        capabilities:
+          add: ["SETFCAP"]
+      volumeMounts:
+        # Tip 3: writable layer storage (do not use the container's rootfs)
+        - name: varlibcontainers
+          mountPath: /var/lib/containers
+        - name: buildah-home
+          mountPath: /home/build
+      script: |
+        #!/usr/bin/env bash
+        set -euo pipefail
+
+        mkdir -p /home/build/.docker \
+                 /home/build/.local/share/containers/storage \
+                 /var/lib/containers
+
+        if [[ -f "$(workspaces.dockerconfig.path)/.dockerconfigjson" ]]; then
+          cp "$(workspaces.dockerconfig.path)/.dockerconfigjson" /home/build/.docker/config.json
+        elif [[ -f "$(workspaces.dockerconfig.path)/config.json" ]]; then
+          cp "$(workspaces.dockerconfig.path)/config.json" /home/build/.docker/config.json
+        fi
+        export DOCKER_CONFIG=/home/build/.docker
+
+        # Tips 1–2: vfs + chroot (also set via env above)
+        buildah bud \
+          --storage-driver vfs \
+          --isolation chroot \
+          --build-arg BUILD_VERSION="$(params.BUILD_VERSION)" \
+          --build-arg SCENARIO=tekton \
+          --build-arg IMAGE_REF="$(params.IMAGE)" \
+          --build-arg BUILDER_IMAGE=registry.access.redhat.com/ubi9/openjdk-21:1.21 \
+          --build-arg RUNTIME_IMAGE=registry.access.redhat.com/hi/openjdk:21.0.11-runtime \
+          -t "$(params.IMAGE)" \
+          -f Dockerfile .
+
+        buildah push --storage-driver vfs --digestfile /tmp/digest "$(params.IMAGE)"
+
+        # Chains type-hints: both IMAGE_URL and IMAGE_DIGEST are required for OCI signing.
+        # Without IMAGE_URL, the TaskRun succeeds but Chains never signs → "no signatures found".
+        DIGEST="$(tr -d '[:space:]' < /tmp/digest)"
+        if [[ -n "${DIGEST}" && "${DIGEST}" != sha256:* ]]; then
+          DIGEST="sha256:${DIGEST}"
+        fi
+        printf '%s' "$(params.IMAGE)" | tee "$(results.IMAGE_URL.path)"
+        printf '%s' "${DIGEST}" | tee "$(results.IMAGE_DIGEST.path)"
+---
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: version-bump
+  namespace: rhtas-demo-ci
+spec:
+  description: >
+    Update GitOps kustomization image tag (and trust ConfigMap) then push
+    so OpenShift GitOps / Argo CD deploys the newly built image.
+  params:
+    - name: IMAGE
+      type: string
+      description: Full image reference quay.io/org/repo:tag
+    - name: IMAGE_DIGEST
+      type: string
+      default: unknown
+    - name: BUILD_VERSION
+      type: string
+    - name: GITOPS_URL
+      type: string
+    - name: GITOPS_REVISION
+      type: string
+      default: main
+    - name: KUSTOMIZATION_PATH
+      type: string
+      default: gitops/manifests/hello-world/kustomization.yaml
+    - name: TRUST_CONFIGMAP_PATH
+      type: string
+      default: gitops/manifests/hello-world/trust-configmap.yaml
+  workspaces:
+    - name: basic-auth
+      description: Secret with username + password (GitHub PAT with repo write)
+  steps:
+    - name: bump-and-push
+      image: registry.redhat.io/openshift-pipelines/pipelines-git-init-rhel8:v1.14.0
+      env:
+        - name: HOME
+          value: /tekton/home
+      script: |
+        #!/usr/bin/env bash
+        set -euo pipefail
+
+        AUTH_DIR="$(workspaces.basic-auth.path)"
+        if [[ ! -f "${AUTH_DIR}/username" || ! -f "${AUTH_DIR}/password" ]]; then
+          echo "version-bump requires basic-auth workspace (username + password/PAT)" >&2
+          exit 1
+        fi
+        USER="$(cat "${AUTH_DIR}/username")"
+        PASS="$(cat "${AUTH_DIR}/password")"
+
+        IMAGE="$(params.IMAGE)"
+        IMAGE_NAME="${IMAGE%:*}"
+        IMAGE_TAG="${IMAGE##*:}"
+        DIGEST="$(params.IMAGE_DIGEST)"
+        # digestfile may be sha256:... or raw hex
+        if [[ -n "${DIGEST}" && "${DIGEST}" != unknown && "${DIGEST}" != sha256:* ]]; then
+          DIGEST="sha256:${DIGEST}"
+        fi
+
+        WORK=/tmp/gitops-work
+        rm -rf "${WORK}"
+        AUTHED_URL="$(params.GITOPS_URL)"
+        AUTHED_URL="$(echo "${AUTHED_URL}" | sed -E "s#https://#https://${USER}:${PASS}@#")"
+
+        git clone --depth 1 --branch "$(params.GITOPS_REVISION)" "${AUTHED_URL}" "${WORK}"
+        cd "${WORK}"
+
+        KUSTOMIZATION="$(params.KUSTOMIZATION_PATH)"
+        TRUST_CM="$(params.TRUST_CONFIGMAP_PATH)"
+
+        if [[ ! -f "${KUSTOMIZATION}" ]]; then
+          echo "Missing ${KUSTOMIZATION}" >&2
+          exit 1
+        fi
+
+        # Update image transformer (newName + newTag only; keep name: as deployment match key)
+        sed -i "s|^[[:space:]]*newName:.*|    newName: ${IMAGE_NAME}|" "${KUSTOMIZATION}"
+        sed -i "s|^[[:space:]]*newTag:.*|    newTag: ${IMAGE_TAG}|" "${KUSTOMIZATION}"
+
+        if [[ -f "${TRUST_CM}" ]]; then
+          sed -i "s|^[[:space:]]*BUILD_VERSION:.*|  BUILD_VERSION: \"$(params.BUILD_VERSION)\"|" "${TRUST_CM}"
+          sed -i "s|^[[:space:]]*IMAGE_REF:.*|  IMAGE_REF: \"${IMAGE}\"|" "${TRUST_CM}"
+          sed -i "s|^[[:space:]]*IMAGE_DIGEST:.*|  IMAGE_DIGEST: \"${DIGEST}\"|" "${TRUST_CM}"
+          sed -i "s|^[[:space:]]*SCENARIO:.*|  SCENARIO: \"tekton\"|" "${TRUST_CM}"
+          sed -i "s|^[[:space:]]*SIGNED_AT:.*|  SIGNED_AT: \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"|" "${TRUST_CM}"
+        fi
+
+        git config user.email "tekton@rhtas-demo.local"
+        git config user.name "Tekton RHTAS"
+        git add "${KUSTOMIZATION}"
+        [[ -f "${TRUST_CM}" ]] && git add "${TRUST_CM}"
+
+        if git diff --cached --quiet; then
+          echo "No GitOps changes to commit"
+          exit 0
+        fi
+
+        git commit -m "chore(gitops): deploy ${IMAGE}"
+        git push origin "HEAD:$(params.GITOPS_REVISION)"
+        echo "Pushed GitOps update for ${IMAGE}"

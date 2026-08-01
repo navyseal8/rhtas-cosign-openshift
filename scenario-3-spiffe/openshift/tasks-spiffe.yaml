@@ -9,7 +9,13 @@ spec:
       type: string
     - name: SPIRE_OIDC_ISSUER
       type: string
-      description: SpireOIDCDiscoveryProvider jwtIssuer URL (same as SpireServer.spec.jwtIssuer)
+      description: SpireOIDCDiscoveryProvider jwtIssuer (JWT iss / Fulcio OIDC issuer)
+    - name: TUF_URL
+      type: string
+      description: RHTAS TUF Ready URL (provides signing config + trust roots for Cosign 3)
+    - name: TUF_ROOT_CHECKSUM
+      type: string
+      description: sha256 of TUF 1.root.json (cosign initialize --root-checksum)
   workspaces:
     - name: dockerconfig
   volumes:
@@ -17,38 +23,50 @@ spec:
       csi:
         driver: csi.spiffe.io
         readOnly: true
+    - name: cosign-home
+      emptyDir: {}
+  stepTemplate:
+    env:
+      - name: HOME
+        value: /tekton/home
+      - name: SPIFFE_ENDPOINT_SOCKET
+        value: unix:///spiffe-workload-api/agent.sock
+      - name: DOCKER_CONFIG
+        value: $(workspaces.dockerconfig.path)
+      - name: COSIGN_YES
+        value: "true"
+      # OIDC issuer for SPIFFE JWT-SVID → Fulcio (do not set COSIGN_FULCIO_URL / COSIGN_REKOR_URL —
+      # Cosign 3 loads those from TUF signing config after initialize)
+      - name: COSIGN_OIDC_ISSUER
+        value: $(params.SPIRE_OIDC_ISSUER)
+      - name: COSIGN_CERTIFICATE_OIDC_ISSUER
+        value: $(params.SPIRE_OIDC_ISSUER)
+      - name: COSIGN_MIRROR
+        value: $(params.TUF_URL)
+      - name: COSIGN_ROOT
+        value: $(params.TUF_URL)/root.json
+    volumeMounts:
+      - name: spiffe-workload-api
+        mountPath: /spiffe-workload-api
+        readOnly: true
+      - name: cosign-home
+        mountPath: /tekton/home
   steps:
+    # hi/cosign is distroless (no bash). Cosign 3: initialize TUF then sign WITHOUT
+    # --fulcio-url/--rekor-url (conflicts with TUF signing config).
+    - name: tuf-init
+      image: registry.access.redhat.com/hi/cosign:3.1.1
+      command: ["cosign"]
+      args:
+        - initialize
+        - --mirror=$(params.TUF_URL)
+        - --root=$(params.TUF_URL)/1.root.json
+        - --root-checksum=$(params.TUF_ROOT_CHECKSUM)
     - name: sign-with-spiffe
-      image: registry.redhat.io/rhtas-tech-preview/cosign-rhel9:latest
-      env:
-        - name: SPIFFE_ENDPOINT_SOCKET
-          value: unix:///spiffe-workload-api/agent.sock
-        - name: DOCKER_CONFIG
-          value: $(workspaces.dockerconfig.path)
-        - name: RHTAS_NS
-          value: trusted-artifact-signer
-      volumeMounts:
-        - name: spiffe-workload-api
-          mountPath: /spiffe-workload-api
-          readOnly: true
-      script: |
-        #!/usr/bin/env bash
-        set -euo pipefail
-
-        export TUF_URL=$(oc get tuf -n "${RHTAS_NS}" -o jsonpath='{.items[0].status.url}')
-        export COSIGN_FULCIO_URL=$(oc get fulcio -n "${RHTAS_NS}" -o jsonpath='{.items[0].status.url}')
-        export COSIGN_REKOR_URL=$(oc get rekor -n "${RHTAS_NS}" -o jsonpath='{.items[0].status.url}')
-        export COSIGN_MIRROR="${TUF_URL}"
-        export COSIGN_ROOT="${TUF_URL}/root.json"
-        export COSIGN_YES=true
-
-        export SPIRE_OIDC_ISSUER="$(params.SPIRE_OIDC_ISSUER)"
-        export COSIGN_OIDC_ISSUER="${SPIRE_OIDC_ISSUER}"
-        export COSIGN_CERTIFICATE_OIDC_ISSUER="${SPIRE_OIDC_ISSUER}"
-
-        cosign initialize --mirror "${COSIGN_MIRROR}" --root "${COSIGN_ROOT}"
-
-        # Automatic: cosign uses SPIFFE workload API via SPIFFE_ENDPOINT_SOCKET
-        cosign sign -y "$(params.IMAGE)"
-
-        echo "Signed $(params.IMAGE) with SPIFFE workload identity"
+      image: registry.access.redhat.com/hi/cosign:3.1.1
+      command: ["cosign"]
+      args:
+        - sign
+        - -y
+        # JWT-SVID from SPIFFE_ENDPOINT_SOCKET; Fulcio/Rekor from TUF signing config
+        - $(params.IMAGE)
