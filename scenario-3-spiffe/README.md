@@ -239,10 +239,16 @@ oc apply -f openshift/spiffe-signer-sa.yaml
 oc apply -f openshift/scc-spiffe-signer.yaml
 oc adm policy add-scc-to-user pipelines-scc \
   -z spiffe-cosign-signer -n rhtas-demo-ci
+# Quay auth for cosign: Tekton copies SA-mounted dockerconfig → $HOME/.docker
 oc secrets link spiffe-cosign-signer quay-credentials -n rhtas-demo-ci --for=pull,mount
 
 oc apply -f openshift/tasks-spiffe.yaml
 oc apply -f openshift/pipeline-spiffe.yaml
+
+# Confirm the auth wiring revision is live before the next run:
+oc get task spiffe-cosign-sign -n rhtas-demo-ci \
+  -o jsonpath='{.metadata.annotations.rhtas\.demo/auth}{"\n"}'
+# expect: tekton-sa-creds-v3
 ```
 
 ### 6. Run (cosign signs with SPIFFE — no TokenRequest)
@@ -337,4 +343,4 @@ In-cluster verify: reuse the Scenario 2 `hi/cosign` pod pattern; change identity
 | OIDC curl fails | `managedRoute: true`; wait for route; check TLS / DNS |
 | `cannot specify service URLs and use signing config` | Do not pass `--fulcio-url` / `--rekor-url` / `--oidc-issuer` with Cosign 3 — use `cosign signing-config create` + `--signing-config` |
 | Root checksum deprecation warning | Pass `tuf-root-checksum` (`sha256` of `${TUF_URL}/1.root.json`) |
-| Quay `UNAUTHORIZED` on `cosign sign` | `$DOCKER_CONFIG/config.json` must be readable by the cosign UID; keep auth off `$HOME/.docker` so Tekton cred copy is not blocked. Confirm `quay-credentials` linked to signer SA |
+| Quay `UNAUTHORIZED` on `cosign sign` | Ensure `quay-credentials` is on SA `spiffe-cosign-signer` (`oc secrets link … --for=pull,mount`). Confirm Task annotation `rhtas.demo/auth=tekton-sa-creds-v3` (no root `setup-registry-auth` step). Do not pre-create `$HOME/.docker` |

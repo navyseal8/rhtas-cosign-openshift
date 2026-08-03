@@ -3,6 +3,9 @@ kind: Task
 metadata:
   name: spiffe-cosign-sign
   namespace: rhtas-demo-ci
+  annotations:
+    # Bump when auth wiring changes — confirm with: oc get task spiffe-cosign-sign -o jsonpath='{.metadata.annotations.rhtas\.demo/auth}'
+    rhtas.demo/auth: tekton-sa-creds-v3
 spec:
   params:
     - name: IMAGE
@@ -21,26 +24,19 @@ spec:
     - name: TUF_ROOT_CHECKSUM
       type: string
       description: sha256 of TUF 1.root.json (cosign initialize --root-checksum)
-  workspaces:
-    - name: dockerconfig
+  # Quay auth comes from SA-linked dockerconfig (Tekton copies /tekton/creds → $HOME/.docker).
+  # Do not pre-create $HOME/.docker as root — that blocks the copy and breaks Cosign.
   volumes:
     - name: spiffe-workload-api
       csi:
         driver: csi.spiffe.io
         readOnly: true
-    # Cosign HOME (TUF + signing-config). Do not write here as root in an earlier step —
-    # OpenShift assigns a random UID to later steps and they must own this volume.
     - name: cosign-home
-      emptyDir: {}
-    # Registry auth outside HOME so Tekton's /tekton/creds → $HOME/.docker copy is not blocked.
-    - name: registry-auth
       emptyDir: {}
   stepTemplate:
     env:
       - name: HOME
         value: /tekton/home
-      - name: DOCKER_CONFIG
-        value: /registry-auth
       - name: SPIFFE_ENDPOINT_SOCKET
         value: unix:///spiffe-workload-api/agent.sock
       - name: COSIGN_YES
@@ -55,30 +51,7 @@ spec:
         readOnly: true
       - name: cosign-home
         mountPath: /tekton/home
-      - name: registry-auth
-        mountPath: /registry-auth
   steps:
-    # Quay secret mounts as .dockerconfigjson; Cosign needs $DOCKER_CONFIG/config.json.
-    # chmod a+rX so the non-root cosign UID can read it.
-    - name: setup-registry-auth
-      image: registry.access.redhat.com/ubi9/ubi-minimal:latest
-      script: |
-        #!/bin/bash
-        set -euo pipefail
-        mkdir -p /registry-auth
-        cfg="$(workspaces.dockerconfig.path)"
-        if [[ -f "${cfg}/.dockerconfigjson" ]]; then
-          cp "${cfg}/.dockerconfigjson" /registry-auth/config.json
-        elif [[ -f "${cfg}/config.json" ]]; then
-          cp "${cfg}/config.json" /registry-auth/config.json
-        else
-          echo "No docker config in workspace ${cfg}:" >&2
-          ls -la "${cfg}" >&2 || true
-          exit 1
-        fi
-        chmod 0755 /registry-auth
-        chmod 0644 /registry-auth/config.json
-        echo "Registry auth ready at ${DOCKER_CONFIG}/config.json"
     - name: tuf-init
       image: registry.access.redhat.com/hi/cosign:3.1.1
       command: ["cosign"]

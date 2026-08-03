@@ -90,9 +90,6 @@ spec:
       taskRef:
         name: spiffe-cosign-sign
       serviceAccountName: spiffe-cosign-signer
-      workspaces:
-        - name: dockerconfig
-          workspace: docker-credentials
       params:
         # Prefer digest from build-push (Cosign warns on tags; avoids TOCTOU)
         - name: IMAGE
