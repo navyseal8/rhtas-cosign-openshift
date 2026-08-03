@@ -28,10 +28,10 @@ data:
   #   oc get fulcio,rekor,tuf -n trusted-artifact-signer
   # Prefer the Ready HTTPS routes from those CRs (short names like
   # fulcio.trusted-artifact-signer.svc often do not resolve).
-  COSIGN_FULCIO_URL: "https://fulcio-server-trusted-artifact-signer.apps.cluster-7s4dl.dyn.redhatworkshops.io"
-  COSIGN_REKOR_URL: "https://rekor-server-trusted-artifact-signer.apps.cluster-7s4dl.dyn.redhatworkshops.io"
-  COSIGN_MIRROR: "https://tuf-trusted-artifact-signer.apps.cluster-7s4dl.dyn.redhatworkshops.io"
-  COSIGN_ROOT: "https://tuf-trusted-artifact-signer.apps.cluster-7s4dl.dyn.redhatworkshops.io/root.json"
+  COSIGN_FULCIO_URL: "https://fulcio-server-trusted-artifact-signer.apps.cluster-4pftr.dyn.redhatworkshops.io"
+  COSIGN_REKOR_URL: "https://rekor-server-trusted-artifact-signer.apps.cluster-4pftr.dyn.redhatworkshops.io"
+  COSIGN_MIRROR: "https://tuf-trusted-artifact-signer.apps.cluster-4pftr.dyn.redhatworkshops.io"
+  COSIGN_ROOT: "https://tuf-trusted-artifact-signer.apps.cluster-4pftr.dyn.redhatworkshops.io/root.json"
   # Cluster OIDC — required for keyless SA identity
   COSIGN_OIDC_ISSUER: "https://kubernetes.default.svc"
   COSIGN_CERTIFICATE_OIDC_ISSUER: "https://kubernetes.default.svc"

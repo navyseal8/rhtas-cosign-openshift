@@ -25,12 +25,12 @@ spec:
     # https://rekor.sigstore.dev and verify against RHTAS TUF will fail.
     # (chains-rhtas-env ConfigMap is NOT mounted into the controller.)
     transparency.enabled: true
-    transparency.url: "https://rekor-server-trusted-artifact-signer.apps.cluster-5zgfn.dyn.redhatworkshops.io"
+    transparency.url: "https://rekor-server-trusted-artifact-signer.apps.cluster-4pftr.dyn.redhatworkshops.io"
     # Keyless via Fulcio (x509 signer), not a static cosign private key
     # TektonConfig expects a real bool here (not the string "true")
     signers.x509.fulcio.enabled: true
     # Replace with your Fulcio URL after: oc get fulcio -n trusted-artifact-signer
     # Use the Ready URL from the CR (OpenShift Route), not a made-up short DNS name.
-    signers.x509.fulcio.address: "https://fulcio-server-trusted-artifact-signer.apps.cluster-5zgfn.dyn.redhatworkshops.io"
+    signers.x509.fulcio.address: "https://fulcio-server-trusted-artifact-signer.apps.cluster-4pftr.dyn.redhatworkshops.io"
     # Must match Authentication.spec.serviceAccountIssuer / token iss
     signers.x509.fulcio.issuer: "https://kubernetes.default.svc"
