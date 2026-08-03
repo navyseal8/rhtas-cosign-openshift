@@ -337,4 +337,4 @@ In-cluster verify: reuse the Scenario 2 `hi/cosign` pod pattern; change identity
 | OIDC curl fails | `managedRoute: true`; wait for route; check TLS / DNS |
 | `cannot specify service URLs and use signing config` | Do not pass `--fulcio-url` / `--rekor-url` / `--oidc-issuer` with Cosign 3 — use `cosign signing-config create` + `--signing-config` |
 | Root checksum deprecation warning | Pass `tuf-root-checksum` (`sha256` of `${TUF_URL}/1.root.json`) |
-| Quay `UNAUTHORIZED` on `cosign sign` | Task must expose `$DOCKER_CONFIG/config.json` (not raw `.dockerconfigjson`); confirm `quay-credentials` on signer SA + workspace |
+| Quay `UNAUTHORIZED` on `cosign sign` | `$DOCKER_CONFIG/config.json` must be readable by the cosign UID; keep auth off `$HOME/.docker` so Tekton cred copy is not blocked. Confirm `quay-credentials` linked to signer SA |

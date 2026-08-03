@@ -28,15 +28,19 @@ spec:
       csi:
         driver: csi.spiffe.io
         readOnly: true
+    # Cosign HOME (TUF + signing-config). Do not write here as root in an earlier step —
+    # OpenShift assigns a random UID to later steps and they must own this volume.
     - name: cosign-home
+      emptyDir: {}
+    # Registry auth outside HOME so Tekton's /tekton/creds → $HOME/.docker copy is not blocked.
+    - name: registry-auth
       emptyDir: {}
   stepTemplate:
     env:
       - name: HOME
         value: /tekton/home
-      # Cosign/docker expect $DOCKER_CONFIG/config.json (directory), not the secret key path
       - name: DOCKER_CONFIG
-        value: /tekton/home/.docker
+        value: /registry-auth
       - name: SPIFFE_ENDPOINT_SOCKET
         value: unix:///spiffe-workload-api/agent.sock
       - name: COSIGN_YES
@@ -51,24 +55,29 @@ spec:
         readOnly: true
       - name: cosign-home
         mountPath: /tekton/home
+      - name: registry-auth
+        mountPath: /registry-auth
   steps:
-    # Quay dockerconfigjson secret mounts as .dockerconfigjson; Cosign needs config.json.
+    # Quay secret mounts as .dockerconfigjson; Cosign needs $DOCKER_CONFIG/config.json.
+    # chmod a+rX so the non-root cosign UID can read it.
     - name: setup-registry-auth
       image: registry.access.redhat.com/ubi9/ubi-minimal:latest
       script: |
         #!/bin/bash
         set -euo pipefail
-        mkdir -p /tekton/home/.docker
+        mkdir -p /registry-auth
         cfg="$(workspaces.dockerconfig.path)"
         if [[ -f "${cfg}/.dockerconfigjson" ]]; then
-          cp "${cfg}/.dockerconfigjson" /tekton/home/.docker/config.json
+          cp "${cfg}/.dockerconfigjson" /registry-auth/config.json
         elif [[ -f "${cfg}/config.json" ]]; then
-          cp "${cfg}/config.json" /tekton/home/.docker/config.json
+          cp "${cfg}/config.json" /registry-auth/config.json
         else
           echo "No docker config in workspace ${cfg}:" >&2
           ls -la "${cfg}" >&2 || true
           exit 1
         fi
+        chmod 0755 /registry-auth
+        chmod 0644 /registry-auth/config.json
         echo "Registry auth ready at ${DOCKER_CONFIG}/config.json"
     - name: tuf-init
       image: registry.access.redhat.com/hi/cosign:3.1.1
@@ -78,7 +87,7 @@ spec:
         - --mirror=$(params.TUF_URL)
         - --root=$(params.TUF_URL)/1.root.json
         - --root-checksum=$(params.TUF_ROOT_CHECKSUM)
-    # Cosign 3: Fulcio / Rekor / OIDC must live in a signing config (not --fulcio-url etc.).
+    # Cosign 3: Fulcio / Rekor / OIDC live in a signing config (not --fulcio-url etc.).
     - name: create-signing-config
       image: registry.access.redhat.com/hi/cosign:3.1.1
       command: ["cosign"]
