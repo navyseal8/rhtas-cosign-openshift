@@ -29,19 +29,35 @@ spec:
         REPO_URL="$(params.url)"
         REVISION="$(params.revision)"
 
+        echo "=== git-clone ==="
+        echo "url:      $(params.url)"
+        echo "revision: ${REVISION}"
+        echo "dest:     ${CHECKOUT_DIR}"
+
         # PVC workspaces may retain files from a previous run (no find in git-init image)
         shopt -s dotglob nullglob
         rm -rf "${CHECKOUT_DIR:?}"/*
 
         AUTH_DIR="$(workspaces.basic-auth.path)"
         if [[ -n "${AUTH_DIR}" && -f "${AUTH_DIR}/username" && -f "${AUTH_DIR}/password" ]]; then
+          echo "auth:     basic-auth workspace (credentials not printed)"
           USER="$(cat "${AUTH_DIR}/username")"
           PASS="$(cat "${AUTH_DIR}/password")"
           # Inject credentials into HTTPS URL for private GitHub repos
           REPO_URL="$(echo "${REPO_URL}" | sed -E "s#https://#https://${USER}:${PASS}@#")"
+        else
+          echo "auth:     none (public or pre-authenticated URL)"
         fi
 
-        git clone --depth 1 --branch "${REVISION}" "${REPO_URL}" "${CHECKOUT_DIR}"
+        echo "--- cloning ---"
+        # Progress on stderr is what tkn / OpenShift console show as step logs
+        git clone --progress --depth 1 --branch "${REVISION}" "${REPO_URL}" "${CHECKOUT_DIR}"
+
+        echo "--- checkout ---"
+        git -C "${CHECKOUT_DIR}" rev-parse HEAD
+        git -C "${CHECKOUT_DIR}" log -1 --oneline
+        git -C "${CHECKOUT_DIR}" status --short | head -n 20 || true
+        echo "=== git-clone done ==="
 ---
 apiVersion: tekton.dev/v1
 kind: Task
@@ -62,7 +78,18 @@ spec:
       script: |
         #!/usr/bin/env bash
         set -euo pipefail
-        mvn -q -DskipTests=false test package
+        echo "=== maven-build ==="
+        echo "context: $(params.CONTEXT)"
+        echo "cwd:     $(pwd)"
+        echo "java:    $(java -version 2>&1 | head -n 1)"
+        echo "mvn:     $(mvn -v | head -n 1)"
+        ls -la
+        echo "--- mvn test package ---"
+        # Avoid -q so OpenShift / tkn show compiler + Surefire output
+        mvn -B -DskipTests=false test package
+        echo "--- artifacts ---"
+        ls -la target/*.jar 2>/dev/null || ls -la target/ || true
+        echo "=== maven-build done ==="
 ---
 apiVersion: tekton.dev/v1
 kind: Task
@@ -93,7 +120,14 @@ spec:
       script: |
         #!/usr/bin/env bash
         set -euo pipefail
-        semgrep scan --config p/java --error --quiet .
+        echo "=== sast-semgrep ==="
+        echo "context: $(params.CONTEXT)"
+        echo "cwd:     $(pwd)"
+        echo "semgrep: $(semgrep --version 2>/dev/null || true)"
+        echo "--- semgrep scan (p/java) ---"
+        # Avoid --quiet so findings and progress appear in tkn / OpenShift logs
+        semgrep scan --config p/java --error --metrics=off .
+        echo "=== sast-semgrep done (no blocking findings) ==="
 ---
 apiVersion: tekton.dev/v1
 kind: Task
