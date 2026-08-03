@@ -336,6 +336,7 @@ In-cluster verify: reuse the Scenario 2 `hi/cosign` pod pattern; change identity
 | Symptom | Check |
 |---------|-------|
 | `the server doesn't have a resource type "spiffeid"` | Use `clusterspiffeids` / `spireservers` (not legacy names) |
+| Cosign device flow / `PKCE is not supported by OIDC provider ''` | `SPIFFE_ENDPOINT_SOCKET` must be `/spiffe-workload-api/agent.sock` (path only). Confirm Task annotation `rhtas.demo/spiffe-socket=path-only-v1` |
 | CSI mount fails / no `agent.sock` | `SpiffeCSIDriver` + `SpireAgent` Ready; pod has `rhtas.demo/signer=true` |
 | OIDC deploy `0/1`, logs `no identity issued` / agent `lookup <node>: no such host` | Run `./openshift/spire/apply-agent-config.sh` (DaemonSet `hostAliases` + create-only). Label is `app.kubernetes.io/name=spire-agent`. |
 | Fulcio rejects JWT | `$JWT_ISSUER` on Fulcio matches discovery `issuer`; `ClientID: sigstore` |

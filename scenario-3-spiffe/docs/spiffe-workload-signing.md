@@ -83,10 +83,11 @@ volumeMounts:
     readOnly: true
 env:
   - name: SPIFFE_ENDPOINT_SOCKET
-    value: unix:///spiffe-workload-api/agent.sock
+    # Cosign expects a filesystem path (it prepends unix://). Do not use unix:///...
+    value: /spiffe-workload-api/agent.sock
 ```
 
-Cosign 2.x+ includes a **SPIFFE workload identity provider** that reads `SPIFFE_ENDPOINT_SOCKET` and fetches a JWT-SVID with audience `sigstore`.
+Cosign’s SPIFFE provider reads `SPIFFE_ENDPOINT_SOCKET`, fetches a JWT-SVID with audience `sigstore`, and uses it as the Fulcio identity token. Pass `--oidc-provider=spiffe --fulcio-auth-flow=token` so Cosign does not fall back to interactive device flow.
 
 ## Step 4 — Automatic signing (no token script)
 
@@ -108,8 +109,12 @@ cosign signing-config create \
   --oidc-provider="url=https://oidc-discovery.<spire-domain>,api-version=1,start-time=2020-01-01T00:00:00Z,operator=spire" \
   --out signing-config.json
 
-# Cosign detects SPIFFE via SPIFFE_ENDPOINT_SOCKET — no --identity-token flag
-cosign sign -y --signing-config=signing-config.json "${IMAGE}"
+# Cosign detects SPIFFE via SPIFFE_ENDPOINT_SOCKET (filesystem path, not unix:// URI)
+cosign sign -y \
+  --signing-config=signing-config.json \
+  --oidc-provider=spiffe \
+  --fulcio-auth-flow=token \
+  "${IMAGE}"
 ```
 
 **Automatic** means:
@@ -161,7 +166,8 @@ certificateOidcIssuer: "^https://oidc-discovery\\.spire\\.example\\.com$"
 
 | Symptom | Check |
 |---------|-------|
-| cosign can't find SPIFFE socket | CSI driver installed; pod has `rhtas.demo/signer=true` label |
+| Cosign uses device flow / `OIDC provider ''` / PKCE error | Set `SPIFFE_ENDPOINT_SOCKET` to a **path** (`/spiffe-workload-api/agent.sock`), not `unix:///…`. Cosign prepends `unix://` itself. Use `--oidc-provider=spiffe --fulcio-auth-flow=token` |
+| cosign can't find SPIFFE socket | CSI driver installed; pod has `rhtas.demo/signer=true` label; socket exists at `/spiffe-workload-api/agent.sock` |
 | Fulcio rejects JWT | OIDC issuer in Securesign matches SPIRE discovery URL |
 | Wrong SPIFFE ID | ClusterSPIFFEID selector vs pod labels |
 | `audience` mismatch | SPIRE entry must allow `sigstore` audience |

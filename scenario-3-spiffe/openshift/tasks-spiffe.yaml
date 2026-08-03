@@ -4,8 +4,10 @@ metadata:
   name: spiffe-cosign-sign
   namespace: rhtas-demo-ci
   annotations:
-    # Bump when auth wiring changes — confirm with: oc get task spiffe-cosign-sign -o jsonpath='{.metadata.annotations.rhtas\.demo/auth}'
+    # Bump when auth/SPIFFE wiring changes — confirm with:
+    #   oc get task spiffe-cosign-sign -o jsonpath='{.metadata.annotations.rhtas\.demo/auth}'
     rhtas.demo/auth: tekton-sa-creds-v3
+    rhtas.demo/spiffe-socket: path-only-v1
 spec:
   params:
     - name: IMAGE
@@ -25,7 +27,6 @@ spec:
       type: string
       description: sha256 of TUF 1.root.json (cosign initialize --root-checksum)
   # Quay auth comes from SA-linked dockerconfig (Tekton copies /tekton/creds → $HOME/.docker).
-  # Do not pre-create $HOME/.docker as root — that blocks the copy and breaks Cosign.
   volumes:
     - name: spiffe-workload-api
       csi:
@@ -37,8 +38,11 @@ spec:
     env:
       - name: HOME
         value: /tekton/home
+      # Cosign SPIFFE provider does os.Stat(env) then WithAddr("unix://"+env).
+      # Use a filesystem path only — NOT the SPIFFE-standard "unix:///..." URI
+      # (that disables the provider and Cosign falls back to device-flow OIDC).
       - name: SPIFFE_ENDPOINT_SOCKET
-        value: unix:///spiffe-workload-api/agent.sock
+        value: /spiffe-workload-api/agent.sock
       - name: COSIGN_YES
         value: "true"
       - name: COSIGN_MIRROR
@@ -83,5 +87,7 @@ spec:
         - sign
         - -y
         - --signing-config=/tekton/home/signing-config.json
-        # JWT-SVID from SPIFFE_ENDPOINT_SOCKET (audience sigstore)
+        # Force SPIFFE ambient JWT-SVID (aud=sigstore); never device-flow OIDC
+        - --oidc-provider=spiffe
+        - --fulcio-auth-flow=token
         - $(params.IMAGE)
