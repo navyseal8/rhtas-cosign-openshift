@@ -53,10 +53,11 @@ spec:
         # Progress on stderr is what tkn / OpenShift console show as step logs
         git clone --progress --depth 1 --branch "${REVISION}" "${REPO_URL}" "${CHECKOUT_DIR}"
 
+        # OpenShift random UIDs → "dubious ownership" on follow-up git reads
         echo "--- checkout ---"
-        git -C "${CHECKOUT_DIR}" rev-parse HEAD
-        git -C "${CHECKOUT_DIR}" log -1 --oneline
-        git -C "${CHECKOUT_DIR}" status --short | head -n 20 || true
+        git -c safe.directory="${CHECKOUT_DIR}" -C "${CHECKOUT_DIR}" rev-parse HEAD
+        git -c safe.directory="${CHECKOUT_DIR}" -C "${CHECKOUT_DIR}" log -1 --oneline
+        git -c safe.directory="${CHECKOUT_DIR}" -C "${CHECKOUT_DIR}" status --short | head -n 20 || true
         echo "=== git-clone done ==="
 ---
 apiVersion: tekton.dev/v1
