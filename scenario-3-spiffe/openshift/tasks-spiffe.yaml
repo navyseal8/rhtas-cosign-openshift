@@ -5,8 +5,8 @@ metadata:
   namespace: rhtas-demo-ci
   annotations:
     # Confirm live Task wiring:
-    #   oc get task spiffe-cosign-sign -o jsonpath='{.metadata.annotations.rhtas\.demo/spiffe-socket}'
-    rhtas.demo/auth: tekton-sa-creds-v3
+    #   oc get task spiffe-cosign-sign -o jsonpath='{.metadata.annotations.rhtas\.demo/auth}'
+    rhtas.demo/auth: registry-auth-v4
     rhtas.demo/spiffe-socket: spire-agent-sock-v1
 spec:
   params:
@@ -26,37 +26,31 @@ spec:
     - name: TUF_ROOT_CHECKSUM
       type: string
       description: sha256 of TUF 1.root.json (cosign initialize --root-checksum)
+  workspaces:
+    - name: dockerconfig
+      description: Quay dockerconfigjson (mounted as .dockerconfigjson)
   volumes:
     - name: spiffe-workload-api
       csi:
         driver: csi.spiffe.io
         readOnly: true
+    # Cosign HOME (TUF + signing-config). Only mounted on cosign steps — never on
+    # root ubi steps, or Tekton writes root-owned $HOME/.docker and cosign can't auth.
     - name: cosign-home
       emptyDir: {}
-  stepTemplate:
-    env:
-      - name: HOME
-        value: /tekton/home
-      # Cosign SPIFFE provider: os.Stat(env) then WithAddr("unix://"+env).
-      # Use a filesystem path only (not unix:///…). OpenShift ZTWIM socket name is
-      # spire-agent.sock (see OCP docs), not agent.sock.
-      - name: SPIFFE_ENDPOINT_SOCKET
-        value: /spiffe-workload-api/spire-agent.sock
-      - name: COSIGN_YES
-        value: "true"
-      - name: COSIGN_MIRROR
-        value: $(params.TUF_URL)
-      - name: COSIGN_ROOT
-        value: $(params.TUF_URL)/1.root.json
-    volumeMounts:
-      - name: spiffe-workload-api
-        mountPath: /spiffe-workload-api
-        readOnly: true
-      - name: cosign-home
-        mountPath: /tekton/home
+    # Registry auth outside HOME; readable by any UID (0644).
+    - name: registry-auth
+      emptyDir: {}
   steps:
     - name: probe-spiffe-socket
       image: registry.access.redhat.com/ubi9/ubi-minimal:latest
+      env:
+        - name: SPIFFE_ENDPOINT_SOCKET
+          value: /spiffe-workload-api/spire-agent.sock
+      volumeMounts:
+        - name: spiffe-workload-api
+          mountPath: /spiffe-workload-api
+          readOnly: true
       script: |
         #!/bin/bash
         set -euo pipefail
@@ -65,21 +59,93 @@ spec:
         SOCK="${SPIFFE_ENDPOINT_SOCKET}"
         if [[ ! -e "${SOCK}" ]]; then
           echo "ERROR: expected Workload API socket at ${SOCK}" >&2
-          echo "OpenShift ZTWIM normally exposes spire-agent.sock via csi.spiffe.io." >&2
           find /spiffe-workload-api -maxdepth 2 -print 2>/dev/null || true
           exit 1
         fi
         echo "OK: socket present at ${SOCK}"
+
+    # Quay secret → $DOCKER_CONFIG/config.json (world-readable for non-root cosign).
+    - name: setup-registry-auth
+      image: registry.access.redhat.com/ubi9/ubi-minimal:latest
+      env:
+        - name: DOCKER_CONFIG
+          value: /registry-auth
+      volumeMounts:
+        - name: registry-auth
+          mountPath: /registry-auth
+      script: |
+        #!/bin/bash
+        set -euo pipefail
+        mkdir -p /registry-auth
+        cfg="$(workspaces.dockerconfig.path)"
+        if [[ -f "${cfg}/.dockerconfigjson" ]]; then
+          cp "${cfg}/.dockerconfigjson" /registry-auth/config.json
+        elif [[ -f "${cfg}/config.json" ]]; then
+          cp "${cfg}/config.json" /registry-auth/config.json
+        else
+          echo "No docker config in workspace ${cfg}:" >&2
+          ls -la "${cfg}" >&2 || true
+          exit 1
+        fi
+        chmod 0755 /registry-auth
+        chmod 0644 /registry-auth/config.json
+        echo "Registry auth ready at /registry-auth/config.json"
+
     - name: tuf-init
       image: registry.access.redhat.com/hi/cosign:3.1.1
+      env:
+        - name: HOME
+          value: /tekton/home
+        - name: DOCKER_CONFIG
+          value: /registry-auth
+        - name: SPIFFE_ENDPOINT_SOCKET
+          value: /spiffe-workload-api/spire-agent.sock
+        - name: COSIGN_YES
+          value: "true"
+        - name: COSIGN_MIRROR
+          value: $(params.TUF_URL)
+        - name: COSIGN_ROOT
+          value: $(params.TUF_URL)/1.root.json
+      volumeMounts:
+        - name: spiffe-workload-api
+          mountPath: /spiffe-workload-api
+          readOnly: true
+        - name: cosign-home
+          mountPath: /tekton/home
+        - name: registry-auth
+          mountPath: /registry-auth
+          readOnly: true
       command: ["cosign"]
       args:
         - initialize
         - --mirror=$(params.TUF_URL)
         - --root=$(params.TUF_URL)/1.root.json
         - --root-checksum=$(params.TUF_ROOT_CHECKSUM)
+
     - name: create-signing-config
       image: registry.access.redhat.com/hi/cosign:3.1.1
+      env:
+        - name: HOME
+          value: /tekton/home
+        - name: DOCKER_CONFIG
+          value: /registry-auth
+        - name: SPIFFE_ENDPOINT_SOCKET
+          value: /spiffe-workload-api/spire-agent.sock
+        - name: COSIGN_YES
+          value: "true"
+        - name: COSIGN_MIRROR
+          value: $(params.TUF_URL)
+        - name: COSIGN_ROOT
+          value: $(params.TUF_URL)/1.root.json
+      volumeMounts:
+        - name: spiffe-workload-api
+          mountPath: /spiffe-workload-api
+          readOnly: true
+        - name: cosign-home
+          mountPath: /tekton/home
+        - name: registry-auth
+          mountPath: /registry-auth
+          readOnly: true
       command: ["cosign"]
       args:
         - signing-config
@@ -93,13 +159,35 @@ spec:
         - --rekor-config=ANY
         - --oidc-provider=url=$(params.SPIRE_OIDC_ISSUER),api-version=1,start-time=2020-01-01T00:00:00Z,operator=spire
         - --out=/tekton/home/signing-config.json
+
     - name: sign-with-spiffe
       image: registry.access.redhat.com/hi/cosign:3.1.1
+      env:
+        - name: HOME
+          value: /tekton/home
+        - name: DOCKER_CONFIG
+          value: /registry-auth
+        - name: SPIFFE_ENDPOINT_SOCKET
+          value: /spiffe-workload-api/spire-agent.sock
+        - name: COSIGN_YES
+          value: "true"
+        - name: COSIGN_MIRROR
+          value: $(params.TUF_URL)
+        - name: COSIGN_ROOT
+          value: $(params.TUF_URL)/1.root.json
+      volumeMounts:
+        - name: spiffe-workload-api
+          mountPath: /spiffe-workload-api
+          readOnly: true
+        - name: cosign-home
+          mountPath: /tekton/home
+        - name: registry-auth
+          mountPath: /registry-auth
+          readOnly: true
       command: ["cosign"]
       args:
         - sign
         - -y
         - --signing-config=/tekton/home/signing-config.json
-        # Ambient JWT-SVID via SPIFFE_ENDPOINT_SOCKET (audience sigstore)
         - --oidc-provider=spiffe
         - $(params.IMAGE)
