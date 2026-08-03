@@ -83,11 +83,12 @@ volumeMounts:
     readOnly: true
 env:
   - name: SPIFFE_ENDPOINT_SOCKET
-    # Cosign expects a filesystem path (it prepends unix://). Do not use unix:///...
-    value: /spiffe-workload-api/agent.sock
+    # Cosign expects a filesystem path (it prepends unix://). OpenShift ZTWIM
+    # exposes spire-agent.sock (not agent.sock).
+    value: /spiffe-workload-api/spire-agent.sock
 ```
 
-Cosign’s SPIFFE provider reads `SPIFFE_ENDPOINT_SOCKET`, fetches a JWT-SVID with audience `sigstore`, and uses it as the Fulcio identity token. Pass `--oidc-provider=spiffe --fulcio-auth-flow=token` so Cosign does not fall back to interactive device flow.
+Cosign’s SPIFFE provider reads `SPIFFE_ENDPOINT_SOCKET`, fetches a JWT-SVID with audience `sigstore`, and uses it as the Fulcio identity token. Pass `--oidc-provider=spiffe` so Cosign does not fall back to interactive device flow. Do **not** set `--fulcio-auth-flow=token` unless you also pass `--identity-token` (token flow with an empty token yields `compact JWS format must have three parts`).
 
 ## Step 4 — Automatic signing (no token script)
 
@@ -113,7 +114,6 @@ cosign signing-config create \
 cosign sign -y \
   --signing-config=signing-config.json \
   --oidc-provider=spiffe \
-  --fulcio-auth-flow=token \
   "${IMAGE}"
 ```
 
@@ -166,8 +166,9 @@ certificateOidcIssuer: "^https://oidc-discovery\\.spire\\.example\\.com$"
 
 | Symptom | Check |
 |---------|-------|
-| Cosign uses device flow / `OIDC provider ''` / PKCE error | Set `SPIFFE_ENDPOINT_SOCKET` to a **path** (`/spiffe-workload-api/agent.sock`), not `unix:///…`. Cosign prepends `unix://` itself. Use `--oidc-provider=spiffe --fulcio-auth-flow=token` |
-| cosign can't find SPIFFE socket | CSI driver installed; pod has `rhtas.demo/signer=true` label; socket exists at `/spiffe-workload-api/agent.sock` |
+| Cosign uses device flow / `OIDC provider ''` / PKCE error | Set `SPIFFE_ENDPOINT_SOCKET` to `/spiffe-workload-api/spire-agent.sock` (path only, correct filename) |
+| Cosign `compact JWS … three parts` | Wrong/missing socket → empty identity token; do not use `--fulcio-auth-flow=token` without `--identity-token` |
+| cosign can't find SPIFFE socket | CSI driver installed; pod has `rhtas.demo/signer=true` label; inspect `probe-spiffe-socket` logs |
 | Fulcio rejects JWT | OIDC issuer in Securesign matches SPIRE discovery URL |
 | Wrong SPIFFE ID | ClusterSPIFFEID selector vs pod labels |
 | `audience` mismatch | SPIRE entry must allow `sigstore` audience |

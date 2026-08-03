@@ -4,10 +4,10 @@ metadata:
   name: spiffe-cosign-sign
   namespace: rhtas-demo-ci
   annotations:
-    # Bump when auth/SPIFFE wiring changes — confirm with:
-    #   oc get task spiffe-cosign-sign -o jsonpath='{.metadata.annotations.rhtas\.demo/auth}'
+    # Confirm live Task wiring:
+    #   oc get task spiffe-cosign-sign -o jsonpath='{.metadata.annotations.rhtas\.demo/spiffe-socket}'
     rhtas.demo/auth: tekton-sa-creds-v3
-    rhtas.demo/spiffe-socket: path-only-v1
+    rhtas.demo/spiffe-socket: spire-agent-sock-v1
 spec:
   params:
     - name: IMAGE
@@ -26,7 +26,6 @@ spec:
     - name: TUF_ROOT_CHECKSUM
       type: string
       description: sha256 of TUF 1.root.json (cosign initialize --root-checksum)
-  # Quay auth comes from SA-linked dockerconfig (Tekton copies /tekton/creds → $HOME/.docker).
   volumes:
     - name: spiffe-workload-api
       csi:
@@ -38,11 +37,11 @@ spec:
     env:
       - name: HOME
         value: /tekton/home
-      # Cosign SPIFFE provider does os.Stat(env) then WithAddr("unix://"+env).
-      # Use a filesystem path only — NOT the SPIFFE-standard "unix:///..." URI
-      # (that disables the provider and Cosign falls back to device-flow OIDC).
+      # Cosign SPIFFE provider: os.Stat(env) then WithAddr("unix://"+env).
+      # Use a filesystem path only (not unix:///…). OpenShift ZTWIM socket name is
+      # spire-agent.sock (see OCP docs), not agent.sock.
       - name: SPIFFE_ENDPOINT_SOCKET
-        value: /spiffe-workload-api/agent.sock
+        value: /spiffe-workload-api/spire-agent.sock
       - name: COSIGN_YES
         value: "true"
       - name: COSIGN_MIRROR
@@ -56,6 +55,21 @@ spec:
       - name: cosign-home
         mountPath: /tekton/home
   steps:
+    - name: probe-spiffe-socket
+      image: registry.access.redhat.com/ubi9/ubi-minimal:latest
+      script: |
+        #!/bin/bash
+        set -euo pipefail
+        echo "=== SPIFFE CSI mount ==="
+        ls -la /spiffe-workload-api/ || true
+        SOCK="${SPIFFE_ENDPOINT_SOCKET}"
+        if [[ ! -e "${SOCK}" ]]; then
+          echo "ERROR: expected Workload API socket at ${SOCK}" >&2
+          echo "OpenShift ZTWIM normally exposes spire-agent.sock via csi.spiffe.io." >&2
+          find /spiffe-workload-api -maxdepth 2 -print 2>/dev/null || true
+          exit 1
+        fi
+        echo "OK: socket present at ${SOCK}"
     - name: tuf-init
       image: registry.access.redhat.com/hi/cosign:3.1.1
       command: ["cosign"]
@@ -64,7 +78,6 @@ spec:
         - --mirror=$(params.TUF_URL)
         - --root=$(params.TUF_URL)/1.root.json
         - --root-checksum=$(params.TUF_ROOT_CHECKSUM)
-    # Cosign 3: Fulcio / Rekor / OIDC live in a signing config (not --fulcio-url etc.).
     - name: create-signing-config
       image: registry.access.redhat.com/hi/cosign:3.1.1
       command: ["cosign"]
@@ -87,7 +100,6 @@ spec:
         - sign
         - -y
         - --signing-config=/tekton/home/signing-config.json
-        # Force SPIFFE ambient JWT-SVID (aud=sigstore); never device-flow OIDC
+        # Ambient JWT-SVID via SPIFFE_ENDPOINT_SOCKET (audience sigstore)
         - --oidc-provider=spiffe
-        - --fulcio-auth-flow=token
         - $(params.IMAGE)

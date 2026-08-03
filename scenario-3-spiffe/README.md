@@ -44,7 +44,7 @@ flowchart TB
     SRV["SpireServer<br/>issues SVIDs · registration DB · trust-domain CA"]
     CM["SPIRE Controller Manager<br/>watches pods + ClusterSPIFFEID CRs"]
     AGENT["SpireAgent DaemonSet<br/>node + workload attestation<br/>Workload API"]
-    CSI["SpiffeCSIDriver<br/>mounts agent.sock into pods"]
+    CSI["SpiffeCSIDriver<br/>mounts spire-agent.sock into pods"]
     OIDC["SpireOIDCDiscoveryProvider<br/>OIDC discovery + JWKS for JWT-SVIDs"]
 
     CM <-->|"UNIX socket / Server API"| SRV
@@ -60,7 +60,7 @@ flowchart TB
 
   subgraph POD["Signer workload pod"]
     COSIGN["cosign sign<br/>SPIFFE_ENDPOINT_SOCKET"]
-    SOCK["/spiffe-workload-api/agent.sock"]
+    SOCK["/spiffe-workload-api/spire-agent.sock"]
     COSIGN --> SOCK
   end
 
@@ -92,7 +92,7 @@ sequenceDiagram
 
   Note over Server,Agent: Node attested · ClusterSPIFFEID registered
   Pod->>CSI: start → mount Workload API volume
-  CSI->>Agent: expose agent.sock in pod
+  CSI->>Agent: expose spire-agent.sock in pod
   Pod->>Agent: request JWT-SVID (audience sigstore)
   Agent->>Agent: workload attestation (labels / SA / ns)
   Agent->>Server: fetch / mint SVID for SPIFFE ID
@@ -336,8 +336,9 @@ In-cluster verify: reuse the Scenario 2 `hi/cosign` pod pattern; change identity
 | Symptom | Check |
 |---------|-------|
 | `the server doesn't have a resource type "spiffeid"` | Use `clusterspiffeids` / `spireservers` (not legacy names) |
-| Cosign device flow / `PKCE is not supported by OIDC provider ''` | `SPIFFE_ENDPOINT_SOCKET` must be `/spiffe-workload-api/agent.sock` (path only). Confirm Task annotation `rhtas.demo/spiffe-socket=path-only-v1` |
-| CSI mount fails / no `agent.sock` | `SpiffeCSIDriver` + `SpireAgent` Ready; pod has `rhtas.demo/signer=true` |
+| Cosign device flow / `PKCE is not supported by OIDC provider ''` | `SPIFFE_ENDPOINT_SOCKET` must be a **path** to `spire-agent.sock` (not `unix:///…`, not `agent.sock`). Confirm annotation `rhtas.demo/spiffe-socket=spire-agent-sock-v1` |
+| Cosign `compact JWS format must have three parts` | SPIFFE provider got no token (wrong/missing socket) while `--fulcio-auth-flow=token` parsed empty string — fix socket path; do not force token flow without `--identity-token` |
+| CSI mount fails / no socket | `SpiffeCSIDriver` + `SpireAgent` Ready; pod has `rhtas.demo/signer=true`; check `probe-spiffe-socket` step logs |
 | OIDC deploy `0/1`, logs `no identity issued` / agent `lookup <node>: no such host` | Run `./openshift/spire/apply-agent-config.sh` (DaemonSet `hostAliases` + create-only). Label is `app.kubernetes.io/name=spire-agent`. |
 | Fulcio rejects JWT | `$JWT_ISSUER` on Fulcio matches discovery `issuer`; `ClientID: sigstore` |
 | Wrong SPIFFE ID in cert | `ClusterSPIFFEID` template / `TRUST_DOMAIN` / SA name |
