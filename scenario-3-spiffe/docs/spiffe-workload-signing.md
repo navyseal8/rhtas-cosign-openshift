@@ -99,16 +99,17 @@ cosign initialize \
   --root "$TUF_URL/1.root.json" \
   --root-checksum "$TUF_ROOT_CHECKSUM"
 
-# Cosign 3: custom OIDC issuer conflicts with default --use-signing-config=true.
-# Private RHTAS + SPIFFE uses the legacy service-URL path.
-# Cosign detects SPIFFE via SPIFFE_ENDPOINT_SOCKET — no --identity-token flag.
-cosign sign -y \
-  --use-signing-config=false \
-  --new-bundle-format=false \
-  --fulcio-url="$FULCIO_URL" \
-  --rekor-url="$REKOR_URL" \
-  --oidc-issuer="https://oidc-discovery.<spire-domain>" \
-  "${IMAGE}"
+# Cosign 3: put Fulcio / Rekor / SPIRE OIDC in a signing config (not deprecated CLI flags).
+cosign signing-config create \
+  --no-default-fulcio --no-default-rekor --no-default-oidc --no-default-tsa \
+  --fulcio="url=${FULCIO_URL},api-version=1,start-time=2020-01-01T00:00:00Z,operator=redhat.com" \
+  --rekor="url=${REKOR_URL},api-version=1,start-time=2020-01-01T00:00:00Z,operator=redhat.com" \
+  --rekor-config=ANY \
+  --oidc-provider="url=https://oidc-discovery.<spire-domain>,api-version=1,start-time=2020-01-01T00:00:00Z,operator=spire" \
+  --out signing-config.json
+
+# Cosign detects SPIFFE via SPIFFE_ENDPOINT_SOCKET — no --identity-token flag
+cosign sign -y --signing-config=signing-config.json "${IMAGE}"
 ```
 
 **Automatic** means:

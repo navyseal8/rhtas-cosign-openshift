@@ -247,9 +247,9 @@ oc apply -f openshift/pipeline-spiffe.yaml
 
 ### 6. Run (cosign signs with SPIFFE — no TokenRequest)
 
-Cosign 3 defaults to `--use-signing-config=true`. A custom SPIRE `--oidc-issuer` counts as a
-service URL and conflicts with that default. This task uses the private-Sigstore path:
-`--use-signing-config=false --new-bundle-format=false` plus Fulcio/Rekor/OIDC.
+Cosign 3 puts Fulcio / Rekor / OIDC in a **signing config** (not `--fulcio-url` / `--rekor-url` /
+`--oidc-issuer`). The task runs `cosign signing-config create` for RHTAS + SPIRE, then
+`cosign sign --signing-config=…`.
 
 ```bash
 export FULCIO_URL=$(oc get fulcio -n trusted-artifact-signer -o jsonpath='{.items[0].status.url}')
@@ -280,7 +280,8 @@ Do **not** pass a global `--serviceaccount=spiffe-cosign-signer` — that forces
 (writable `HOME` on `sast-semgrep`) and grant that SA `pipelines-scc` for Buildah.
 
 The `spiffe-sign` task mounts `csi.spiffe.io`, sets `SPIFFE_ENDPOINT_SOCKET`, initializes TUF,
-then runs `cosign sign` so Cosign fetches a JWT-SVID automatically (audience `sigstore`).
+builds a signing config, then runs `cosign sign` so Cosign fetches a JWT-SVID automatically
+(audience `sigstore`).
 
 ## Verify
 
@@ -334,5 +335,6 @@ In-cluster verify: reuse the Scenario 2 `hi/cosign` pod pattern; change identity
 | Fulcio rejects JWT | `$JWT_ISSUER` on Fulcio matches discovery `issuer`; `ClientID: sigstore` |
 | Wrong SPIFFE ID in cert | `ClusterSPIFFEID` template / `TRUST_DOMAIN` / SA name |
 | OIDC curl fails | `managedRoute: true`; wait for route; check TLS / DNS |
-| `cannot specify service URLs and use signing config` | Cosign 3: SPIRE `--oidc-issuer` conflicts with default signing-config — task uses `--use-signing-config=false --new-bundle-format=false` |
+| `cannot specify service URLs and use signing config` | Do not pass `--fulcio-url` / `--rekor-url` / `--oidc-issuer` with Cosign 3 — use `cosign signing-config create` + `--signing-config` |
 | Root checksum deprecation warning | Pass `tuf-root-checksum` (`sha256` of `${TUF_URL}/1.root.json`) |
+| Quay `UNAUTHORIZED` on `cosign sign` | Task must expose `$DOCKER_CONFIG/config.json` (not raw `.dockerconfigjson`); confirm `quay-credentials` on signer SA + workspace |

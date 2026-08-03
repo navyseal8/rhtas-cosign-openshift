@@ -7,6 +7,7 @@ spec:
   params:
     - name: IMAGE
       type: string
+      description: Image reference to sign (prefer digest, e.g. quay.io/org/repo@sha256:…)
     - name: SPIRE_OIDC_ISSUER
       type: string
       description: SpireOIDCDiscoveryProvider jwtIssuer (JWT iss / Fulcio OIDC issuer)
@@ -33,10 +34,11 @@ spec:
     env:
       - name: HOME
         value: /tekton/home
+      # Cosign/docker expect $DOCKER_CONFIG/config.json (directory), not the secret key path
+      - name: DOCKER_CONFIG
+        value: /tekton/home/.docker
       - name: SPIFFE_ENDPOINT_SOCKET
         value: unix:///spiffe-workload-api/agent.sock
-      - name: DOCKER_CONFIG
-        value: $(workspaces.dockerconfig.path)
       - name: COSIGN_YES
         value: "true"
       - name: COSIGN_MIRROR
@@ -50,11 +52,24 @@ spec:
       - name: cosign-home
         mountPath: /tekton/home
   steps:
-    # hi/cosign is distroless (no bash).
-    # Cosign 3 defaults to --use-signing-config=true. A custom OIDC issuer (SPIRE)
-    # counts as a "service URL" and errors with:
-    #   cannot specify service URLs and use signing config
-    # For private RHTAS + SPIFFE, disable signing-config and pass Fulcio/Rekor/OIDC.
+    # Quay dockerconfigjson secret mounts as .dockerconfigjson; Cosign needs config.json.
+    - name: setup-registry-auth
+      image: registry.access.redhat.com/ubi9/ubi-minimal:latest
+      script: |
+        #!/bin/bash
+        set -euo pipefail
+        mkdir -p /tekton/home/.docker
+        cfg="$(workspaces.dockerconfig.path)"
+        if [[ -f "${cfg}/.dockerconfigjson" ]]; then
+          cp "${cfg}/.dockerconfigjson" /tekton/home/.docker/config.json
+        elif [[ -f "${cfg}/config.json" ]]; then
+          cp "${cfg}/config.json" /tekton/home/.docker/config.json
+        else
+          echo "No docker config in workspace ${cfg}:" >&2
+          ls -la "${cfg}" >&2 || true
+          exit 1
+        fi
+        echo "Registry auth ready at ${DOCKER_CONFIG}/config.json"
     - name: tuf-init
       image: registry.access.redhat.com/hi/cosign:3.1.1
       command: ["cosign"]
@@ -63,16 +78,28 @@ spec:
         - --mirror=$(params.TUF_URL)
         - --root=$(params.TUF_URL)/1.root.json
         - --root-checksum=$(params.TUF_ROOT_CHECKSUM)
+    # Cosign 3: Fulcio / Rekor / OIDC must live in a signing config (not --fulcio-url etc.).
+    - name: create-signing-config
+      image: registry.access.redhat.com/hi/cosign:3.1.1
+      command: ["cosign"]
+      args:
+        - signing-config
+        - create
+        - --no-default-fulcio
+        - --no-default-rekor
+        - --no-default-oidc
+        - --no-default-tsa
+        - --fulcio=url=$(params.FULCIO_URL),api-version=1,start-time=2020-01-01T00:00:00Z,operator=redhat.com
+        - --rekor=url=$(params.REKOR_URL),api-version=1,start-time=2020-01-01T00:00:00Z,operator=redhat.com
+        - --rekor-config=ANY
+        - --oidc-provider=url=$(params.SPIRE_OIDC_ISSUER),api-version=1,start-time=2020-01-01T00:00:00Z,operator=spire
+        - --out=/tekton/home/signing-config.json
     - name: sign-with-spiffe
       image: registry.access.redhat.com/hi/cosign:3.1.1
       command: ["cosign"]
       args:
         - sign
         - -y
-        - --use-signing-config=false
-        - --new-bundle-format=false
-        - --fulcio-url=$(params.FULCIO_URL)
-        - --rekor-url=$(params.REKOR_URL)
-        - --oidc-issuer=$(params.SPIRE_OIDC_ISSUER)
+        - --signing-config=/tekton/home/signing-config.json
         # JWT-SVID from SPIFFE_ENDPOINT_SOCKET (audience sigstore)
         - $(params.IMAGE)
