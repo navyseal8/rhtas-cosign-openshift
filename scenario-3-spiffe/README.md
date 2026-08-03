@@ -283,17 +283,24 @@ tkn pipeline start rhtas-hello-world-spiffe \
   --param quay-org=rhn_support_jeretan \
   --param quay-repo=hello-world-cosign \
   --param spire-oidc-issuer="${JWT_ISSUER}" \
+  --param trust-domain="${TRUST_DOMAIN}" \
   --param fulcio-url="${FULCIO_URL}" \
   --param rekor-url="${REKOR_URL}" \
   --param tuf-url="${TUF_URL}" \
   --param tuf-root-checksum="${TUF_ROOT_CHECKSUM}" \
   --param git-url=https://github.com/navyseal8/rhtas-cosign-openshift.git \
   --param git-revision=main \
+  --param gitops-url=https://github.com/navyseal8/rhtas-cosign-openshift.git \
+  --param gitops-revision=main \
   --workspace name=shared-workspace,volumeClaimTemplateFile=openshift/workspace-pvc.yaml \
   --workspace name=docker-credentials,secret=quay-credentials \
   --workspace name=git-credentials,secret=github-credentials \
   --showlog
 ```
+
+After `spiffe-sign` succeeds, **version-bump** updates `gitops/manifests/hello-world/kustomization.yaml`
+(`newName` / `newTag`) and `trust-configmap.yaml` (`SCENARIO=spiffe`, digest, SPIFFE identity,
+OIDC issuer), then pushes so Argo CD syncs the signed image.
 
 Do **not** pass a global `--serviceaccount=spiffe-cosign-signer` — that forces *every* task
 (including semgrep) onto the signer SA. The Pipeline already sets that SA only on
@@ -340,10 +347,10 @@ In-cluster verify: reuse the Scenario 2 `hi/cosign` pod pattern; change identity
 | `openshift/fulcio-spire-oidc-patch.json` | Add SPIRE issuer to Fulcio |
 | `openshift/spiffe-signer-sa.yaml` | Signer SA + Quay pull secret |
 | `openshift/scc-spiffe-signer.yaml` | Bind signer SA to `pipelines-scc` (Buildah) |
-| `openshift/tasks.yaml` | Build tasks (cloned from Scenario 2) |
+| `openshift/tasks.yaml` | Build tasks + `version-bump` (GitOps commit) |
 | `openshift/workspace-pvc.yaml` | Pipeline workspace PVC template |
 | `openshift/tasks-spiffe.yaml` | Cosign sign via SPIFFE Workload API |
-| `openshift/pipeline-spiffe.yaml` | Build + push + SPIFFE sign |
+| `openshift/pipeline-spiffe.yaml` | Build + push + SPIFFE sign + version-bump |
 | `docs/spiffe-workload-signing.md` | Deeper OIDC / automatic signing notes |
 
 ## SPIFFE troubleshooting

@@ -241,6 +241,18 @@ spec:
       default: unknown
     - name: BUILD_VERSION
       type: string
+    - name: SCENARIO
+      type: string
+      default: tekton
+      description: Trust ConfigMap SCENARIO label (tekton | spiffe | jenkins)
+    - name: SIGNER_IDENTITY
+      type: string
+      default: ""
+      description: Optional Fulcio certificate identity for trust ConfigMap
+    - name: OIDC_ISSUER
+      type: string
+      default: ""
+      description: Optional OIDC issuer URL for trust ConfigMap
     - name: GITOPS_URL
       type: string
     - name: GITOPS_REVISION
@@ -265,6 +277,7 @@ spec:
         #!/usr/bin/env bash
         set -euo pipefail
 
+        echo "=== version-bump ==="
         AUTH_DIR="$(workspaces.basic-auth.path)"
         if [[ ! -f "${AUTH_DIR}/username" || ! -f "${AUTH_DIR}/password" ]]; then
           echo "version-bump requires basic-auth workspace (username + password/PAT)" >&2
@@ -282,13 +295,20 @@ spec:
           DIGEST="sha256:${DIGEST}"
         fi
 
+        echo "image:    ${IMAGE}"
+        echo "digest:   ${DIGEST}"
+        echo "scenario: $(params.SCENARIO)"
+        echo "gitops:   $(params.GITOPS_URL) @ $(params.GITOPS_REVISION)"
+
         WORK=/tmp/gitops-work
         rm -rf "${WORK}"
         AUTHED_URL="$(params.GITOPS_URL)"
         AUTHED_URL="$(echo "${AUTHED_URL}" | sed -E "s#https://#https://${USER}:${PASS}@#")"
 
-        git clone --depth 1 --branch "$(params.GITOPS_REVISION)" "${AUTHED_URL}" "${WORK}"
+        git clone --progress --depth 1 --branch "$(params.GITOPS_REVISION)" "${AUTHED_URL}" "${WORK}"
         cd "${WORK}"
+        git -c safe.directory="${WORK}" status --short >/dev/null || \
+          git config --global --add safe.directory "${WORK}"
 
         KUSTOMIZATION="$(params.KUSTOMIZATION_PATH)"
         TRUST_CM="$(params.TRUST_CONFIGMAP_PATH)"
@@ -306,8 +326,14 @@ spec:
           sed -i "s|^[[:space:]]*BUILD_VERSION:.*|  BUILD_VERSION: \"$(params.BUILD_VERSION)\"|" "${TRUST_CM}"
           sed -i "s|^[[:space:]]*IMAGE_REF:.*|  IMAGE_REF: \"${IMAGE}\"|" "${TRUST_CM}"
           sed -i "s|^[[:space:]]*IMAGE_DIGEST:.*|  IMAGE_DIGEST: \"${DIGEST}\"|" "${TRUST_CM}"
-          sed -i "s|^[[:space:]]*SCENARIO:.*|  SCENARIO: \"tekton\"|" "${TRUST_CM}"
+          sed -i "s|^[[:space:]]*SCENARIO:.*|  SCENARIO: \"$(params.SCENARIO)\"|" "${TRUST_CM}"
           sed -i "s|^[[:space:]]*SIGNED_AT:.*|  SIGNED_AT: \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"|" "${TRUST_CM}"
+          if [[ -n "$(params.SIGNER_IDENTITY)" ]]; then
+            sed -i "s|^[[:space:]]*SIGNER_IDENTITY:.*|  SIGNER_IDENTITY: \"$(params.SIGNER_IDENTITY)\"|" "${TRUST_CM}"
+          fi
+          if [[ -n "$(params.OIDC_ISSUER)" ]]; then
+            sed -i "s|^[[:space:]]*OIDC_ISSUER:.*|  OIDC_ISSUER: \"$(params.OIDC_ISSUER)\"|" "${TRUST_CM}"
+          fi
         fi
 
         git config user.email "tekton@rhtas-demo.local"
@@ -322,4 +348,5 @@ spec:
 
         git commit -m "chore(gitops): deploy ${IMAGE}"
         git push origin "HEAD:$(params.GITOPS_REVISION)"
+        echo "=== version-bump done ==="
         echo "Pushed GitOps update for ${IMAGE}"
