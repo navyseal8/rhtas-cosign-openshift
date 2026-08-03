@@ -6,15 +6,15 @@ metadata:
     app: hello-world
 data:
   # Populated/updated by CI or operators for the live demo. Defaults are placeholders.
-  SCENARIO: "tekton"
-  BUILD_VERSION: "tekton-rhtas-hello-world-run-qfmhs"
-  IMAGE_REF: "quay.io/rhn_support_jeretan/hello-world-cosign:tekton-ad714c08-c851-4cc1-b64d-3950f046688a"
-  IMAGE_DIGEST: "sha256:d918901525a58b44f3e0881098ecfb77146176e54662fedb855c7759487e88b9"
-  SIGNER_IDENTITY: "https://kubernetes.io/namespaces/openshift-pipelines/serviceaccounts/tekton-chains-controller"
-  SIGNED_AT: "2026-08-03T05:10:59Z"
+  SCENARIO: "spiffe"
+  BUILD_VERSION: "spiffe-rhtas-hello-world-spiffe-run-88dgh"
+  IMAGE_REF: "quay.io/rhn_support_jeretan/hello-world-cosign:spiffe-5d5e3917-ba38-4ed7-9140-7a4a6b3df614"
+  IMAGE_DIGEST: "sha256:432656a7c1a708821264948aeb5eeca1c7a699f3ebe1dbeda3913ff97e8f8d0d"
+  SIGNER_IDENTITY: "spiffe://apps.cluster-4pftr.dyn.redhatworkshops.io/ns/rhtas-demo-ci/sa/spiffe-cosign-signer"
+  SIGNED_AT: "2026-08-03T07:51:57Z"
   FULCIO_URL: "https://fulcio-server-trusted-artifact-signer.apps.cluster-7s4dl.dyn.redhatworkshops.io"
   REKOR_URL: "https://rekor-server-trusted-artifact-signer.apps.cluster-7s4dl.dyn.redhatworkshops.io"
-  OIDC_ISSUER: "https://kubernetes.default.svc"
+  OIDC_ISSUER: "https://oidc-discovery.apps.cluster-4pftr.dyn.redhatworkshops.io"
   GIT_COMMIT: "unknown"
   BUILDER_IMAGE: "registry.access.redhat.com/ubi9/openjdk-21:1.21"
   RUNTIME_IMAGE: "registry.access.redhat.com/hi/openjdk:21.0.11-runtime"
