@@ -215,18 +215,33 @@ spiffe://<TRUST_DOMAIN>/ns/rhtas-demo-ci/sa/spiffe-cosign-signer
 
 ### 4. Federate SPIRE OIDC with RHTAS Fulcio
 
-Fulcio must trust `$JWT_ISSUER` so Cosign can exchange a JWT-SVID for a signing cert. `Type: uri` matches SPIFFE ID subjects (`spiffe://…`).
+Fulcio must trust `$JWT_ISSUER` and treat JWT-SVIDs as **SPIFFE** identities.
+Use `Type: spiffe` + `SPIFFETrustDomain` (not `Type: uri` — that rejects `spiffe://…` subjects
+with Fulcio 400 `There was an error processing the identity token`).
 
 ```bash
-# Preview patch (substitutes JWT_ISSUER)
+# Preview patch (substitutes JWT_ISSUER + TRUST_DOMAIN)
 envsubst < openshift/fulcio-spire-oidc-patch.json
+
+# If you previously patched with Type: uri, remove that SPIRE issuer entry first:
+oc edit securesign securesign-sample -n trusted-artifact-signer
+# delete the OIDCIssuers item whose IssuerURL is $JWT_ISSUER and Type was uri
 
 oc patch securesign securesign-sample -n trusted-artifact-signer --type=json \
   --patch "$(envsubst < openshift/fulcio-spire-oidc-patch.json)"
 
-# Confirm kubernetes (Scenario 2) + SPIRE issuers both present:
+# Confirm kubernetes (Scenario 2) + SPIRE issuers both present; SPIRE must show type: spiffe
 oc get cm -n trusted-artifact-signer -l rhtas.redhat.com/resource=server-config \
   -o jsonpath='{.items[-1:].data.config\.yaml}{"\n"}'
+```
+
+Expected SPIRE block in Fulcio config (field names may be snake_case in the rendered CM):
+
+```yaml
+- client-id: sigstore
+  issuer-url: https://oidc-discovery.<apps-domain>
+  type: spiffe
+  spiffe-trust-domain: <TRUST_DOMAIN>   # same as Spire trust domain / apps domain
 ```
 
 ### 5. Deploy the SPIFFE cosign pipeline
@@ -340,7 +355,8 @@ In-cluster verify: reuse the Scenario 2 `hi/cosign` pod pattern; change identity
 | Cosign `compact JWS format must have three parts` | SPIFFE provider got no token (wrong/missing socket) while `--fulcio-auth-flow=token` parsed empty string — fix socket path; do not force token flow without `--identity-token` |
 | CSI mount fails / no socket | `SpiffeCSIDriver` + `SpireAgent` Ready; pod has `rhtas.demo/signer=true`; check `probe-spiffe-socket` step logs |
 | OIDC deploy `0/1`, logs `no identity issued` / agent `lookup <node>: no such host` | Run `./openshift/spire/apply-agent-config.sh` (DaemonSet `hostAliases` + create-only). Label is `app.kubernetes.io/name=spire-agent`. |
-| Fulcio rejects JWT | `$JWT_ISSUER` on Fulcio matches discovery `issuer`; `ClientID: sigstore` |
+| Fulcio 400 `error processing the identity token` | SPIRE issuer must be `Type: spiffe` + `SPIFFETrustDomain: $TRUST_DOMAIN` (not `uri`). `iss`/`ClientID`/`aud` = `$JWT_ISSUER` / `sigstore`. Check Fulcio logs + rendered `server-config` CM |
+| Fulcio rejects JWT | `$JWT_ISSUER` on Fulcio matches discovery `issuer`; `ClientID: sigstore`; trust domain matches SPIFFE ID host |
 | Wrong SPIFFE ID in cert | `ClusterSPIFFEID` template / `TRUST_DOMAIN` / SA name |
 | OIDC curl fails | `managedRoute: true`; wait for route; check TLS / DNS |
 | `cannot specify service URLs and use signing config` | Do not pass `--fulcio-url` / `--rekor-url` / `--oidc-issuer` with Cosign 3 — use `cosign signing-config create` + `--signing-config` |

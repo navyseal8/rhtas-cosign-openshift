@@ -6,7 +6,8 @@
       "Issuer": "${JWT_ISSUER}",
       "IssuerURL": "${JWT_ISSUER}",
       "ClientID": "sigstore",
-      "Type": "uri"
+      "Type": "spiffe",
+      "SPIFFETrustDomain": "${TRUST_DOMAIN}"
     }
   }
 ]

@@ -132,14 +132,21 @@ SPIRE's OIDC discovery provider exposes:
 https://oidc-discovery.<domain>/.well-known/openid-configuration
 ```
 
-Add to `Securesign.spec.fulcio.config.OIDCIssuers`:
+Add to `Securesign.spec.fulcio.config.OIDCIssuers` (via `openshift/fulcio-spire-oidc-patch.json`):
 
 ```yaml
-- Issuer: "https://oidc-discovery.spire.example.com"
-  IssuerURL: "https://oidc-discovery.spire.example.com"
-  ClientID: "trusted-artifact-signer"
-  Type: email
+- Issuer: "https://oidc-discovery.<apps-domain>"
+  IssuerURL: "https://oidc-discovery.<apps-domain>"
+  ClientID: "sigstore"
+  Type: spiffe
+  SPIFFETrustDomain: "<TRUST_DOMAIN>"   # e.g. apps.cluster-xxx.example.com
 ```
+
+`Type: spiffe` is required for JWT-SVID subjects (`spiffe://…`). `Type: uri` expects
+`https://…` subjects and Fulcio returns 400 `There was an error processing the identity token`.
+
+`SPIFFETrustDomain` must match the trust domain embedded in the SPIFFE ID (same value as
+`ZeroTrustWorkloadIdentityManager.spec.trustDomain` / ClusterSPIFFEID template).
 
 Fulcio validates JWT-SVID `sub` claim matches the SPIFFE ID registered for the workload.
 
@@ -169,7 +176,7 @@ certificateOidcIssuer: "^https://oidc-discovery\\.spire\\.example\\.com$"
 | Cosign uses device flow / `OIDC provider ''` / PKCE error | Set `SPIFFE_ENDPOINT_SOCKET` to `/spiffe-workload-api/spire-agent.sock` (path only, correct filename) |
 | Cosign `compact JWS … three parts` | Wrong/missing socket → empty identity token; do not use `--fulcio-auth-flow=token` without `--identity-token` |
 | cosign can't find SPIFFE socket | CSI driver installed; pod has `rhtas.demo/signer=true` label; inspect `probe-spiffe-socket` logs |
-| Fulcio rejects JWT | OIDC issuer in Securesign matches SPIRE discovery URL |
+| Fulcio rejects JWT / 400 processing identity token | Use `Type: spiffe` + `SPIFFETrustDomain`; `ClientID: sigstore`; issuer URL = `$JWT_ISSUER` |
 | Wrong SPIFFE ID | ClusterSPIFFEID selector vs pod labels |
 | `audience` mismatch | SPIRE entry must allow `sigstore` audience |
 
